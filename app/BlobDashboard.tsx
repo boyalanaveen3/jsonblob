@@ -620,13 +620,6 @@ export default function BlobDashboard({
             >
               <Terminal className="w-4 h-4" />
             </Link>
-            <button
-              onClick={handleNewBlob}
-              className="p-2 bg-primary text-primary-foreground hover:opacity-90 rounded-md transition-opacity flex items-center justify-center"
-              title="New Blob"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
             {/* Close button for mobile menu */}
             <button
               onClick={() => setIsMobileMenuOpen(false)}
@@ -679,12 +672,21 @@ export default function BlobDashboard({
 
         {/* My Blobs Title Header */}
         <div className="p-3 border-b border-border flex items-center justify-between">
-          <span className="text-xs font-bold text-muted-foreground uppercase">My Blobs</span>
-          {userName && (
-            <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
-              {filteredBlobs.length} saved
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-bold text-muted-foreground uppercase">My Blobs</span>
+            {userName && (
+              <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
+                {filteredBlobs.length}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={handleNewBlob}
+            title="Create New JSON Blob"
+            className="flex items-center justify-center p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
         </div>
 
         {/* List of Blobs */}
@@ -892,16 +894,7 @@ export default function BlobDashboard({
 
             <div className="w-[1px] h-5 bg-border mx-0.5" />
 
-            {/* Delete */}
-            {selectedBlob && (
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="p-2 border border-red-200 dark:border-red-900 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition-colors"
-                title="Delete Blob"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            )}
+
 
             {/* Save */}
             <button
