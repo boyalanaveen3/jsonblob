@@ -1,0 +1,15 @@
+{
+  "name": "jsonblob-app",
+  "pages_build_output_dir": ".vercel/output/static",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "jsonblob-db",
+      "database_id": "1ad3573e-3f03-4906-8599-0b66d06cdc0f"
+    }
+  ],
+  "compatibility_date": "2026-07-14",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}
