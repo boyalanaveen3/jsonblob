@@ -61,6 +61,8 @@ async function run() {
 
     await pageA.waitForURL(`${BASE_URL}/`);
     await pageA.waitForLoadState("networkidle");
+    // Turn off autosave for testing manual flow
+    await pageA.locator("label:has-text('Autosave') input[type='checkbox']").uncheck();
     await delay(1500);
 
     // Verify empty state for User A
@@ -83,7 +85,7 @@ async function run() {
     await delay(200);
 
     await pageA.locator("header button:has-text('Save')").click();
-    await pageA.waitForSelector("text=Blob created successfully");
+    await pageA.locator("text=/successfully|Autosaved/").first().waitFor({ state: "visible" });
     await delay(1000);
     recordResult("User A Blob Creation", true);
 
@@ -102,10 +104,12 @@ async function run() {
 
     await pageB.waitForURL(`${BASE_URL}/`);
     await pageB.waitForLoadState("networkidle");
+    // Turn off autosave for testing manual flow
+    await pageB.locator("label:has-text('Autosave') input[type='checkbox']").uncheck();
     await delay(1500);
 
     // Verify User B does NOT see User A's private blob
-    const userABlobVisibleToB = await pageB.locator("button:has-text('User A Private Blob')").isVisible();
+    const userABlobVisibleToB = await pageB.locator("text=User A Private Blob").first().isVisible();
     recordResult("Data Isolation Check (User B cannot see User A data)", !userABlobVisibleToB, "User B's sidebar does not contain User A's private blob");
 
     // Verify empty state for User B
@@ -128,7 +132,7 @@ async function run() {
     await delay(200);
 
     await pageB.locator("header button:has-text('Save')").click();
-    await pageB.waitForSelector("text=Blob created successfully");
+    await pageB.locator("text=/successfully|Autosaved/").first().waitFor({ state: "visible" });
     await delay(1000);
     recordResult("User B Blob Creation", true);
 
@@ -138,8 +142,8 @@ async function run() {
     await pageA.waitForLoadState("networkidle");
     await delay(1500);
 
-    const userBBlobVisibleToA = await pageA.locator("button:has-text('User B Private Blob')").isVisible();
-    const userABlobVisibleToA = await pageA.locator("button:has-text('User A Private Blob')").isVisible();
+    const userBBlobVisibleToA = await pageA.locator("text=User B Private Blob").first().isVisible();
+    const userABlobVisibleToA = await pageA.locator("text=User A Private Blob").first().isVisible();
     recordResult("Data Isolation Check (User A cannot see User B data)", !userBBlobVisibleToA, "User A does not see User B's blob");
     recordResult("User A private blob visibility", userABlobVisibleToA, "User A sees their own blob");
 

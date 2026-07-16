@@ -19,6 +19,8 @@ import {
   RotateCcw,
   Terminal,
   BookOpen,
+  Edit2,
+  Menu,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -104,8 +106,12 @@ export default function BlobDashboard({
   const [copied, setCopied] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [activeRightTab, setActiveRightTab] = useState<"tree" | "diff">("tree");
-  const [autosaveEnabled, setAutosaveEnabled] = useState(false);
+  const [autosaveEnabled, setAutosaveEnabled] = useState(true);
   const [isAutosaving, setIsAutosaving] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renamingVal, setRenamingVal] = useState("");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [activeEditorTab, setActiveEditorTab] = useState<"editor" | "viewer">("editor");
 
   // Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -462,6 +468,80 @@ export default function BlobDashboard({
     });
   };
 
+  // --- Inline Sidebar Actions: Rename & Delete (like CodePlayground) ---
+  const handleStartRename = (blob: Blob, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenamingId(blob.id);
+    setRenamingVal(blob.title);
+  };
+
+  const handleSaveRename = async (blob: Blob) => {
+    if (!renamingVal.trim()) return;
+    try {
+      const fetchRes = await fetch(`/api/blobs/${blob.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: renamingVal.trim(),
+          content: blob.content,
+        }),
+      });
+      if (fetchRes.ok) {
+        showToast("success", "Blob renamed successfully");
+        setRenamingId(null);
+        // Refresh list
+        const listRes = await fetch("/api/blobs");
+        if (listRes.ok) {
+          const updatedList = (await listRes.json()) as Blob[];
+          setBlobsList(updatedList);
+        }
+        // If it's the currently selected blob, update selectedBlob and title states
+        if (selectedBlob?.id === blob.id) {
+          setSelectedBlob({ ...blob, title: renamingVal.trim() });
+          setTitle(renamingVal.trim());
+        }
+      } else {
+        showToast("error", "Failed to rename blob");
+      }
+    } catch (err: any) {
+      showToast("error", err.message || "Failed to rename blob");
+    }
+  };
+
+  const handleDeleteClick = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm("Are you sure you want to delete this blob?")) {
+      startTransition(async () => {
+        try {
+          const fetchRes = await fetch(`/api/blobs/${id}`, {
+            method: "DELETE",
+          });
+          if (fetchRes.ok) {
+            showToast("success", "Blob deleted successfully");
+            const listRes = await fetch("/api/blobs");
+            let updatedList: Blob[] = [];
+            if (listRes.ok) {
+              updatedList = (await listRes.json()) as Blob[];
+              setBlobsList(updatedList);
+            }
+            // If the deleted blob was the active one, redirect to first or new
+            if (selectedBlob?.id === id) {
+              if (updatedList.length > 0) {
+                handleSelectBlob(updatedList[0]);
+              } else {
+                handleNewBlob();
+              }
+            }
+          } else {
+            showToast("error", "Failed to delete blob");
+          }
+        } catch (err: any) {
+          showToast("error", err.message || "Failed to delete blob");
+        }
+      });
+    }
+  };
+
   // Compute lines & size stats
   const stats = useMemo(() => {
     const lines = content.split("\n").length;
@@ -472,8 +552,20 @@ export default function BlobDashboard({
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
+      {/* Sidebar Backdrop Overlay for Mobile */}
+      {isMobileMenuOpen && (
+        <div
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden"
+        />
+      )}
+
       {/* ================= SIDEBAR ================= */}
-      <aside className="w-80 flex flex-col border-r border-border bg-card">
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-72 md:w-80 flex flex-col border-r border-border bg-card transition-transform duration-300 md:static md:translate-x-0 ${
+          isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         {/* Header */}
         <div className="p-4 border-b border-border flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 select-none">
@@ -534,6 +626,14 @@ export default function BlobDashboard({
               title="New Blob"
             >
               <Plus className="w-4 h-4" />
+            </button>
+            {/* Close button for mobile menu */}
+            <button
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="p-2 hover:bg-accent hover:text-accent-foreground rounded-md md:hidden transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground"
+              title="Close Sidebar"
+            >
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -619,24 +719,62 @@ export default function BlobDashboard({
                 day: "numeric",
               });
               return (
-                <button
+                <div
                   key={blob.id}
                   onClick={() => handleSelectBlob(blob)}
-                  className={`w-full text-left p-3 rounded-md transition-all border flex flex-col gap-1.5 cursor-pointer ${isActive
+                  className={`group w-full text-left p-3 rounded-md transition-all border flex flex-col gap-1.5 cursor-pointer relative ${isActive
                       ? "bg-accent border-muted-foreground"
                       : "bg-transparent border-transparent hover:bg-accent/50"
                     }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="font-medium text-sm truncate">{blob.title}</span>
-                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                      {formattedDate}
-                    </span>
+                  <div className="flex items-start justify-between gap-2 min-w-0 w-full">
+                    {renamingId === blob.id ? (
+                      <input
+                        type="text"
+                        value={renamingVal}
+                        onChange={(e) => setRenamingVal(e.target.value)}
+                        onBlur={() => handleSaveRename(blob)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSaveRename(blob);
+                          if (e.key === "Escape") setRenamingId(null);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        autoFocus
+                        className="bg-background border border-border rounded px-1.5 py-0.5 text-xs w-full outline-none focus:border-primary"
+                      />
+                    ) : (
+                      <span className="font-medium text-sm truncate flex-1 min-w-0">{blob.title}</span>
+                    )}
+                    
+                    {renamingId !== blob.id && (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {/* Hover Actions */}
+                        <div className="group-hover:flex hidden items-center gap-0.5">
+                          <button
+                            onClick={(e) => handleStartRename(blob, e)}
+                            title="Rename"
+                            className="p-0.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground cursor-pointer"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteClick(blob.id, e)}
+                            title="Delete"
+                            className="p-0.5 hover:bg-muted rounded text-muted-foreground hover:text-destructive cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap group-hover:hidden self-center">
+                          {formattedDate}
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <span className="text-xs text-muted-foreground truncate opacity-70">
                     {blob.content.substring(0, 100).replace(/\s+/g, " ")}
                   </span>
-                </button>
+                </div>
               );
             })
           )}
@@ -646,46 +784,58 @@ export default function BlobDashboard({
       {/* ================= EDITOR WORKSPACE ================= */}
       <main className="flex-1 flex flex-col overflow-hidden bg-background">
         {/* Header Action Bar */}
-        <header className="h-16 px-6 border-b border-border flex items-center justify-between gap-4 bg-card">
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="text-lg font-semibold bg-transparent border-none outline-none focus:ring-0 w-1/3 truncate"
-            placeholder="Untitled Blob"
-          />
+        <header className="h-16 px-4 md:px-6 border-b border-border flex items-center justify-between gap-3 bg-card shrink-0">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="p-2 hover:bg-accent hover:text-accent-foreground rounded-md md:hidden shrink-0 text-muted-foreground hover:text-foreground"
+              title="Open Sidebar"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="text-base md:text-lg font-semibold bg-transparent border-none outline-none focus:ring-0 w-full truncate"
+              placeholder="Untitled Blob"
+            />
+          </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
             {/* Code Playground Navigation */}
             <Link
               href="/playground"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-md transition-all shadow-sm shadow-violet-500/10 hover:shadow-violet-500/20 cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-md transition-all shadow-sm shadow-violet-500/10 hover:shadow-violet-500/20 cursor-pointer"
               title="Open Developer Code Playground"
             >
               <Terminal className="w-3.5 h-3.5" />
-              <span>Code Playground</span>
+              <span className="hidden lg:inline">Playground</span>
             </Link>
-            <div className="w-[1px] h-5 bg-border mx-1" />
+            <div className="w-[1px] h-5 bg-border mx-0.5" />
 
             {/* Format */}
             <button
               onClick={handleBeautify}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
               title="Format JSON"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Format</span>
+              <span className="hidden md:inline">Format</span>
             </button>
 
             {/* Autosave Toggle */}
-            <label className="flex items-center gap-1.5 cursor-pointer select-none border border-border px-3 py-1.5 rounded-md hover:bg-accent text-xs font-medium transition-colors">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none border border-border px-2.5 py-1.5 rounded-md hover:bg-accent text-xs font-medium transition-all duration-200">
               <input
                 type="checkbox"
                 checked={autosaveEnabled}
                 onChange={(e) => setAutosaveEnabled(e.target.checked)}
-                className="rounded border-border text-primary focus:ring-primary w-3 h-3 cursor-pointer"
+                className="rounded border-border text-primary focus:ring-primary w-3.5 h-3.5 cursor-pointer"
               />
-              <span className="text-muted-foreground hidden sm:inline">Autosave</span>
+              <div className="flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${autosaveEnabled ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground/50"}`} />
+                <span className="text-muted-foreground hidden md:inline">Autosave</span>
+              </div>
               {isAutosaving && (
                 <Loader2 className="w-3 h-3 animate-spin text-primary ml-0.5" />
               )}
@@ -694,41 +844,41 @@ export default function BlobDashboard({
             {/* Clear */}
             <button
               onClick={handleClear}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border hover:bg-accent text-muted-foreground hover:text-foreground rounded-md transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent text-muted-foreground hover:text-foreground rounded-md transition-colors"
               title="Clear Editor"
             >
               <X className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Clear</span>
+              <span className="hidden md:inline">Clear</span>
             </button>
 
             {/* Reset */}
             <button
               onClick={handleReset}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border hover:bg-accent text-muted-foreground hover:text-foreground rounded-md transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent text-muted-foreground hover:text-foreground rounded-md transition-colors"
               title="Reset Editor to Saved State"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Reset</span>
+              <span className="hidden md:inline">Reset</span>
             </button>
 
             {/* Validate */}
             <button
               onClick={handleValidate}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
               title="Validate JSON syntax"
             >
               <CheckSquare className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Validate</span>
+              <span className="hidden md:inline">Validate</span>
             </button>
 
             {/* Copy */}
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
               title="Copy to Clipboard"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">Copy</span>
+              <span className="hidden md:inline">Copy</span>
             </button>
 
             {/* Download */}
@@ -740,7 +890,7 @@ export default function BlobDashboard({
               <Download className="w-3.5 h-3.5" />
             </button>
 
-            <div className="w-[1px] h-5 bg-border mx-1" />
+            <div className="w-[1px] h-5 bg-border mx-0.5" />
 
             {/* Delete */}
             {selectedBlob && (
@@ -757,30 +907,54 @@ export default function BlobDashboard({
             <button
               onClick={handleSave}
               disabled={isPending}
-              className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 rounded-md transition-all shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 rounded-md transition-all shadow-sm"
             >
               {isPending ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <Check className="w-3.5 h-3.5" />
               )}
-              <span>Save</span>
+              <span className="hidden md:inline">Save</span>
             </button>
           </div>
         </header>
 
+        {/* Mobile Editor/Viewer Tab Switcher */}
+        <div className="flex md:hidden border-b border-border bg-card p-1.5 gap-1 shrink-0">
+          <button
+            onClick={() => setActiveEditorTab("editor")}
+            className={`flex-1 py-2 text-center text-xs font-semibold rounded-md transition-all ${
+              activeEditorTab === "editor"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            Code Editor
+          </button>
+          <button
+            onClick={() => setActiveEditorTab("viewer")}
+            className={`flex-1 py-2 text-center text-xs font-semibold rounded-md transition-all ${
+              activeEditorTab === "viewer"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            Tree & Diff Preview
+          </button>
+        </div>
+
         {/* Editor Area */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Panel: Raw Code Editor */}
-          <div className="flex-1 p-4 h-full min-w-[300px]">
+          <div className={`flex-1 p-3 md:p-4 h-full min-w-[280px] ${activeEditorTab === "editor" ? "block" : "hidden md:block"}`}>
             <MonacoEditor value={content} onChange={(val) => setContent(val || "")} isDark={isDark} />
           </div>
 
           {/* Vertical Divider */}
-          <div className="w-[1px] h-full bg-border" />
+          <div className="hidden md:block w-[1px] h-full bg-border" />
 
           {/* Right Panel: Interactive Helper Tools */}
-          <div className="w-1/2 p-4 h-full flex flex-col min-w-[300px] bg-accent/5">
+          <div className={`w-full md:w-1/2 p-3 md:p-4 h-full flex flex-col min-w-[280px] bg-accent/5 ${activeEditorTab === "viewer" ? "flex" : "hidden md:flex"}`}>
             {/* Tabs selector */}
             <div className="flex items-center gap-1.5 mb-3">
               <button
