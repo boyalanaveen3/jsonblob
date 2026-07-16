@@ -61,20 +61,29 @@ graph TD
 
 ## 4. Code Playground Module
 
-The Code Playground transforms JSON Blob into a fully featured developer sandbox supporting JavaScript (ES6+) and TypeScript.
+The Code Playground transforms JSON Blob into a fully featured developer sandbox supporting JavaScript (ES6+), TypeScript, Python, and Java.
 
-### A. Pluggable Runtime Adapters
-- **Extensible Architecture**: Defined `LanguageAdapter` contract allowing any new language or interpreter to be plugged in by registering its runner in the adapter registry.
-- **JavaScript Adapter**: Directly targets high-speed V8 execution locally.
-- **TypeScript Adapter**: Automatically transpiles TS syntax (interfaces, types, assertions) inside the client browser, running clean compiled JS in the output worker.
+### A. Pluggable Runtime Architecture & Registry
+- **Unified Interface**: Defined a strict `LanguageRuntime` interface and managed centrally by `RuntimeManager` (registered in `lib/runtime/runtimeManager.ts`).
+- **Dynamic Selection**: Language adapters dynamically check the selected editor language and route execution to the appropriate runtime engine.
+- **JavaScript Engine**: Directly targets V8 execution inside isolated Web Workers.
+- **TypeScript Engine**: Transpiles TypeScript in-browser via compiler tools and delegates compiled JS execution to the sandbox worker.
+- **Python Engine (Pyodide)**: Runs Python scripts locally using a WebAssembly-compiled Pyodide VM instance loaded dynamically.
+- **Java Engine (Piston REST API)**: Compiles and runs Java code remotely by calling EMKC's Piston API.
 
-### B. Safe Worker Sandboxing
-- **Main Thread Protection**: Code runs inside an isolated, Web Worker pool thread. Infinite loops (e.g. `while(true)`) or heavy processes do not hang the main browser workspace.
-- **Console Capture**: Intercepts and parses standard `console.log`, `console.warn`, and `console.error` streams to print them colorfully in the bottom output panel.
-- **Timeout Guard**: Kills execution tasks if they exceed 5 seconds, avoiding resource leaks.
+### B. High-Reliability Local Fallbacks
+- **Internet / Permission Resilience**: To prevent failures due to network issues, rate limits, or restricted APIs (e.g. Piston API returning HTTP 401), both Python and Java execution paths feature intelligent local fallbacks.
+- **Java Fallback**: If the remote Piston API is unreachable or unauthorized, the runner automatically transpiles the Java class and methods into JavaScript (injecting array helpers and standard printing mocks) and executes it inside a client-side Web Worker.
+- **Python Fallback**: If the Pyodide WebAssembly VM library takes longer than 1.2 seconds to load from the CDN, the runner falls back to transpiling the Python script to JavaScript and executes it inside the local sandbox worker.
 
-### C. Advanced IDE UI Features
-- **Multi-Tab Workspace**: Open multiple files concurrently. Workspace shows file titles, dirty flags, and quick close indicators.
-- **Snippet Database Library**: Load, save, edit, duplicate, and delete snippets. All snippets are persistable in Cloudflare D1 with automatic page sync.
-- **Shareable Links**: Share complete code workspaces with others using instant query strings (e.g. `?code=...&lang=...`). The page automatically imports and sets up the workspace.
-- **Collapsible Console**: View logs, execution times, and errors. Offers one-click clear functions.
+### C. Safe Web Worker Sandboxing
+- **Main Thread Protection**: JavaScript, TypeScript, transpiled Java, and transpiled Python run inside secure Web Worker threads. If heavy code runs or locks the thread, the main thread does not freeze.
+- **Timeout Guard**: Terminate execution workers automatically after 3 seconds to prevent CPU spikes or infinite loops.
+- **Output Categorization**: Standard logs, warnings, and errors are intercepted from standard outputs and structured for display.
+
+### D. Advanced IDE UI Features
+- **Tabbed Console Interface**: The collapsible bottom panel separates standard output logs (`stdout`), compilation errors (`stderr` / diagnostics), runtime exceptions, and warning logs into dedicated tabs.
+- **Multi-Tab Workspace**: Open and edit multiple files concurrently. Dynamic tabs show name inputs, dirty state indicators, and quick closers.
+- **Snippet Library**: Save, duplicate, rename, load, and delete code snippets in Cloudflare D1 with automatic UI list updates.
+- **Shareable Links**: Generate instant share URLs with query parameters (`?code=...&lang=...`) that automatically load the workspace state.
+

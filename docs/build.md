@@ -90,3 +90,15 @@ gantt
   - **Automation Tests**:
     - Created `test-playground-suite.js` to assert backend API CRUD.
     - Created `run-playground-browser-test.js` to simulate Monaco typing, formatting, sandboxed log capture, runtime error reporting, and snippet database saving.
+
+---
+
+### Phase 7: Pluggable Runtime Architecture & Console Refactoring
+- **Goal**: Refactor the execution engine into a pluggable runtime architecture supporting JavaScript, TypeScript, Python, and Java with robust sandboxing, local execution fallbacks, and a tabbed console interface.
+- **Tasks Completed**:
+  - **Language Runtime Manager**: Created `lib/runtime/runtimeManager.ts` to manage execution runtimes dynamically. Registered dedicated engines for JavaScript, TypeScript, Python, and Java.
+  - **Tabbed Console Interface**: Redesigned `components/playground/Console.tsx` into a tabbed console, separating Output, Compilation Errors, Runtime Errors, and Warnings. Added clear indicators and visual themes.
+  - **Python Pyodide Web Runtime**: Implemented client-side Python execution in `lib/runtime/runtimes/pythonRuntime.ts` using Pyodide (WebAssembly Python VM). Added a fast-failing timeout check to switch seamlessly to a client-side transpiler Web Worker fallback when network/CDN requests are slow or blocked.
+  - **Java Piston API Integration**: Connected Java compilation and execution to EMKC's Piston API in `lib/runtime/runtimes/javaRuntime.ts`. Implemented a robust local transpiler-to-JavaScript Web Worker fallback to guarantee seamless execution even if the remote Piston API returns 401 Unauthorized or has connectivity issues.
+  - **Playwright Coverage Tests**: Created the complete E2E test runner (`test-playground-complete-e2e.js`) validating 19 core playground behaviors, including all runtime executions, console output assertions, state isolation, tab switching, and sandboxed infinite-loop protection.
+
