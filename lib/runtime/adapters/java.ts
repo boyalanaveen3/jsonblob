@@ -96,6 +96,17 @@ function transpileJava(code: string): string {
   }
 
   const javaPrefix = `
+const System = {
+  out: {
+    println: (...args) => console.log(...args),
+    print: (...args) => console.log(...args)
+  },
+  err: {
+    println: (...args) => console.error(...args),
+    print: (...args) => console.error(...args)
+  }
+};
+
 Array.prototype.size = function() { return this.length; };
 Array.prototype.get = function(index) { return this[index]; };
 Array.prototype.add = function(item) { this.push(item); return true; };

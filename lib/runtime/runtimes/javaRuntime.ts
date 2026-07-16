@@ -95,6 +95,17 @@ function transpileJava(code: string): string {
   }
 
   const javaPrefix = `
+const System = {
+  out: {
+    println: (...args) => console.log(...args),
+    print: (...args) => console.log(...args)
+  },
+  err: {
+    println: (...args) => console.error(...args),
+    print: (...args) => console.error(...args)
+  }
+};
+
 Array.prototype.size = function() { return this.length; };
 Array.prototype.get = function(index) { return this[index]; };
 Array.prototype.add = function(item) { this.push(item); return true; };
@@ -123,6 +134,9 @@ export const javaRuntime: LanguageRuntime = {
   async execute(code: string): Promise<ExecutionResult> {
     const startTime = performance.now();
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1000);
+
       const response = await fetch("https://emkc.org/api/v2/piston/execute", {
         method: "POST",
         headers: {
@@ -137,14 +151,17 @@ export const javaRuntime: LanguageRuntime = {
               content: code
             }
           ]
-        })
+        }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error(`Piston API returned HTTP ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as any;
       const timeMs = Math.round(performance.now() - startTime);
 
       const logs: string[] = [];

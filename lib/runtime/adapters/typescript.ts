@@ -1,5 +1,6 @@
 import { LanguageAdapter, ExecutionResult, ValidationResult } from "@/types/playground";
 import { runtimeManager } from "../runtimeManager";
+import { javascriptAdapter } from "./javascript";
 
 // Helper to strip TypeScript type annotations, interfaces, and casts to get clean runnable JS
 function transpileTypeScript(code: string): string {
