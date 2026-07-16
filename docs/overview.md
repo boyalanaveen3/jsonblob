@@ -54,7 +54,9 @@ graph TD
 
 ### D. User Management & Authenticated Storage
 - **Security Action Forms**: Fully functional user registration and login pages.
-- **Dynamic Personal Sidebar**: Authenticated users load a personal reverse-chronological list of saved workspaces, searchable instantly.
+- **Multi-Tenant Data Isolation**: Implemented database-level ownership by associating every blob with a `userId`. All server-side routes and actions inspect secure HTTP-only cookies (`userId`) to verify ownership.
+- **Dynamic Personal Sidebar ("My Blobs")**: Logged-in users see only their own saved workspaces sorted by update time. New users see a clean "No blobs yet" empty state with a call-to-action button, while guest users see a prompt to log in.
+- **Public Templates**: Segregated public starter JSON templates from private user-owned data in a dedicated "Templates" section in the sidebar.
 - **Clipboard & Export**: Quick buttons to copy raw content to the system clipboard or download the document as a `.json` file.
 
 ---

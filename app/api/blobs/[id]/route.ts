@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { blobs } from "@/lib/db/schema";
+import { cookies } from "next/headers";
 
 export const runtime = "edge";
 
@@ -11,12 +12,23 @@ interface RouteParams {
 
 export async function GET(request: Request, { params }: RouteParams) {
   try {
+    const cookieStore = await cookies();
+    const userId = cookieStore.get("userId")?.value;
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { id } = await params;
     const db = await getDb();
     const blob = (await db.select().from(blobs).where(eq(blobs.id, id)).all())[0];
 
     if (!blob) {
       return NextResponse.json({ error: "Blob not found" }, { status: 404 });
+    }
+
+    // Expose only if the current user is the owner
+    if (blob.userId !== userId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     return NextResponse.json(blob);
@@ -31,6 +43,12 @@ export async function GET(request: Request, { params }: RouteParams) {
 
 export async function PUT(request: Request, { params }: RouteParams) {
   try {
+    const cookieStore = await cookies();
+    const userId = cookieStore.get("userId")?.value;
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const { title, content } = body as { title: string; content: string };
@@ -52,9 +70,19 @@ export async function PUT(request: Request, { params }: RouteParams) {
     }
 
     const db = await getDb();
+
+    // Verify ownership first
+    const existing = (await db.select().from(blobs).where(eq(blobs.id, id)).all())[0];
+    if (!existing) {
+      return NextResponse.json({ error: "Blob not found" }, { status: 404 });
+    }
+    if (existing.userId !== userId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const now = new Date().toISOString();
 
-    const result = await db
+    await db
       .update(blobs)
       .set({
         title: title.trim(),
@@ -63,10 +91,6 @@ export async function PUT(request: Request, { params }: RouteParams) {
       })
       .where(eq(blobs.id, id))
       .run();
-
-    if (result.meta.changes === 0) {
-      return NextResponse.json({ error: "Blob not found" }, { status: 404 });
-    }
 
     const updatedBlob = (await db.select().from(blobs).where(eq(blobs.id, id)).all())[0];
     return NextResponse.json(updatedBlob);
@@ -81,14 +105,25 @@ export async function PUT(request: Request, { params }: RouteParams) {
 
 export async function DELETE(request: Request, { params }: RouteParams) {
   try {
-    const { id } = await params;
-    const db = await getDb();
-    const result = await db.delete(blobs).where(eq(blobs.id, id)).run();
-
-    if (result.meta.changes === 0) {
-      return NextResponse.json({ error: "Blob not found" }, { status: 404 });
+    const cookieStore = await cookies();
+    const userId = cookieStore.get("userId")?.value;
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = await params;
+    const db = await getDb();
+
+    // Verify ownership first
+    const existing = (await db.select().from(blobs).where(eq(blobs.id, id)).all())[0];
+    if (!existing) {
+      return NextResponse.json({ error: "Blob not found" }, { status: 404 });
+    }
+    if (existing.userId !== userId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    await db.delete(blobs).where(eq(blobs.id, id)).run();
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error(`API DELETE /api/blobs/${request.url} error:`, error);

@@ -102,3 +102,15 @@ gantt
   - **Java Piston API Integration**: Connected Java compilation and execution to EMKC's Piston API in `lib/runtime/runtimes/javaRuntime.ts`. Implemented a robust local transpiler-to-JavaScript Web Worker fallback to guarantee seamless execution even if the remote Piston API returns 401 Unauthorized or has connectivity issues.
   - **Playwright Coverage Tests**: Created the complete E2E test runner (`test-playground-complete-e2e.js`) validating 19 core playground behaviors, including all runtime executions, console output assertions, state isolation, tab switching, and sandboxed infinite-loop protection.
 
+---
+
+### Phase 8: Multi-Tenant Data Isolation & Security Enforcement
+- **Goal**: Secure private user workspaces through strict database ownership and HTTP-only session cookies.
+- **Tasks Completed**:
+  - **Database Migration**: Added the `user_id` column to the `blobs` table (`migrations/0003_add_userid_to_blobs.sql` and `schema.ts`) referencing the `users` table.
+  - **Server-Side Cookie Authentication**: Migrated user tracking from local storage to secure backend HttpOnly `userId` cookies set during registration and login, and deleted on sign out.
+  - **Endpoint Authorization**: Refactored all GET, POST, PUT, and DELETE API endpoints and Server Actions to enforce that users can only query, save, update, or delete JSON documents matching their authenticated session `userId`.
+  - **Public/Private Segregation**: Restructured the UI sidebar in `app/BlobDashboard.tsx` to separate public static starter "Templates" from private "My Blobs" workspaces. Added customized empty states for logged-out and new users.
+  - **E2E Isolation Verification**: Authored `test-isolation-e2e.js` using Playwright, verifying correct user sign-in/out redirection, empty state prompts, templates visibility, and strict multi-user workspace isolation.
+
+

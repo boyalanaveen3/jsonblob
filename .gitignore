@@ -34,3 +34,7 @@ pnpm-debug.log*
 
 # gemini/antigravity cache
 .gemini
+
+# typescript build cache
+*.tsbuildinfo
+

@@ -5,6 +5,7 @@ export const blobs = sqliteTable("blobs", {
   id: text("id").primaryKey(), // We will use UUIDs
   title: text("title").notNull(),
   content: text("content").notNull(),
+  userId: text("user_id").references(() => users.id),
   createdAt: text("created_at")
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),

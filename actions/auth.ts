@@ -4,6 +4,7 @@
 import { getDb } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { cookies } from "next/headers";
 
 // Pure JS / Web Crypto SHA-256 helper compatible with both Node and Edge
 async function hashPassword(password: string): Promise<string> {
@@ -44,6 +45,22 @@ export async function signUpAction(name: string, email: string, password: string
 
     await db.insert(users).values(newUser).run();
 
+    const cookieStore = await cookies();
+    cookieStore.set("userId", newUser.id, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: "/",
+    });
+    cookieStore.set("userName", newUser.name, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: "/",
+    });
+
     return {
       success: true,
       user: {
@@ -81,6 +98,22 @@ export async function signInAction(email: string, password: string) {
       return { success: false, error: "Invalid email or password" };
     }
 
+    const cookieStore = await cookies();
+    cookieStore.set("userId", userRecord.id, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: "/",
+    });
+    cookieStore.set("userName", userRecord.name, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: "/",
+    });
+
     return {
       success: true,
       user: {
@@ -92,5 +125,17 @@ export async function signInAction(email: string, password: string) {
   } catch (error: any) {
     console.error("SignIn error:", error);
     return { success: false, error: error.message || "Failed to sign in" };
+  }
+}
+
+export async function signOutAction() {
+  try {
+    const cookieStore = await cookies();
+    cookieStore.delete("userId");
+    cookieStore.delete("userName");
+    return { success: true };
+  } catch (error: any) {
+    console.error("SignOut error:", error);
+    return { success: false, error: error.message || "Failed to sign out" };
   }
 }

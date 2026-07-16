@@ -18,6 +18,7 @@ import {
   X,
   RotateCcw,
   Terminal,
+  BookOpen,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -42,10 +43,12 @@ const MonacoDiffEditor = dynamic(() => import("@/components/editor/MonacoDiffEdi
   ),
 });
 import { type Blob } from "@/lib/db/schema";
+import { signOutAction } from "@/actions/auth";
 
 interface BlobDashboardProps {
   initialBlobs: Blob[];
   initialSelectedBlob?: Blob | null;
+  initialUserName?: string | null;
 }
 
 interface Toast {
@@ -54,7 +57,33 @@ interface Toast {
   message: string;
 }
 
-export default function BlobDashboard({ initialBlobs, initialSelectedBlob }: BlobDashboardProps) {
+const TEMPLATES = [
+  {
+    id: "template-simple",
+    title: "Simple Key-Value",
+    content: JSON.stringify({ hello: "world", active: true, count: 1 }, null, 2),
+  },
+  {
+    id: "template-config",
+    title: "API Gateway Config",
+    content: JSON.stringify({
+      gateway: {
+        version: "2.4.1",
+        environment: "production",
+        routes: [
+          { path: "/users", service: "user-service", rateLimit: 100 },
+          { path: "/billing", service: "billing-service", rateLimit: 50 }
+        ]
+      }
+    }, null, 2),
+  }
+];
+
+export default function BlobDashboard({
+  initialBlobs,
+  initialSelectedBlob,
+  initialUserName,
+}: BlobDashboardProps) {
   const router = useRouter();
   // --- States ---
   const [blobsList, setBlobsList] = useState<Blob[]>(initialBlobs);
@@ -82,11 +111,14 @@ export default function BlobDashboard({ initialBlobs, initialSelectedBlob }: Blo
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   // Auth User Session
-  const [userName, setUserName] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(initialUserName || null);
 
   useEffect(() => {
-    setUserName(localStorage.getItem("user_name"));
-  }, []);
+    const stored = localStorage.getItem("user_name");
+    if (stored && !userName) {
+      setUserName(stored);
+    }
+  }, [userName]);
 
   // Transitions for async operations
   const [isPending, startTransition] = useTransition();
@@ -220,6 +252,23 @@ export default function BlobDashboard({ initialBlobs, initialSelectedBlob }: Blo
 
     return () => clearTimeout(delayDebounce);
   }, [content, title, autosaveEnabled, selectedBlob, isValidJson, router]);
+
+  const handleSignOut = async () => {
+    try {
+      await signOutAction();
+      localStorage.removeItem("user_name");
+      localStorage.removeItem("user_email");
+      setUserName(null);
+      setBlobsList([]);
+      setSelectedBlob(null);
+      setContent(JSON.stringify({ welcome: "JSON Blob MVP", status: "ready" }, null, 2));
+      setTitle("Untitled Blob");
+      router.push("/");
+      showToast("success", "Signed out successfully");
+    } catch (err: any) {
+      showToast("error", `Failed to sign out: ${err.message}`);
+    }
+  };
 
   // --- Filtered Blobs ---
   const filteredBlobs = useMemo(() => {
@@ -449,12 +498,7 @@ export default function BlobDashboard({ initialBlobs, initialSelectedBlob }: Blo
                   {userName.charAt(0)}
                 </div>
                 <button
-                  onClick={() => {
-                    localStorage.removeItem("user_name");
-                    localStorage.removeItem("user_email");
-                    setUserName(null);
-                    showToast("success", "Signed out successfully");
-                  }}
+                  onClick={handleSignOut}
                   className="px-2 py-1 text-[9px] font-bold border border-red-500/20 hover:bg-red-500/10 text-red-500 rounded-md transition-colors"
                   title="Sign Out"
                 >
@@ -508,12 +552,64 @@ export default function BlobDashboard({ initialBlobs, initialSelectedBlob }: Blo
           </div>
         </div>
 
+        {/* Templates Section */}
+        <div className="p-3 border-b border-border bg-accent/5">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground uppercase mb-2">
+            <BookOpen className="w-3.5 h-3.5 text-primary" />
+            <span>Templates</span>
+          </div>
+          <div className="space-y-1">
+            {TEMPLATES.map((tmpl) => (
+              <button
+                key={tmpl.id}
+                onClick={() => {
+                  setSelectedBlob(null);
+                  setTitle(tmpl.title);
+                  setContent(tmpl.content);
+                  router.push("/");
+                  showToast("info", `Loaded template: ${tmpl.title}`);
+                }}
+                className="w-full text-left px-2.5 py-1.5 text-xs rounded hover:bg-accent hover:text-foreground transition-all truncate block text-muted-foreground border border-transparent hover:border-border cursor-pointer"
+              >
+                {tmpl.title}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* My Blobs Title Header */}
+        <div className="p-3 border-b border-border flex items-center justify-between">
+          <span className="text-xs font-bold text-muted-foreground uppercase">My Blobs</span>
+          {userName && (
+            <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
+              {filteredBlobs.length} saved
+            </span>
+          )}
+        </div>
+
         {/* List of Blobs */}
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {filteredBlobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-8 text-center text-muted-foreground">
+          {!userName ? (
+            <div className="flex flex-col items-center justify-center p-6 text-center text-muted-foreground my-auto h-64">
               <FileJson className="w-8 h-8 mb-2 opacity-40" />
-              <p className="text-xs">No blobs found</p>
+              <p className="text-xs font-medium mb-3">Sign in to save and sync your JSON blobs</p>
+              <a
+                href="/auth"
+                className="px-4 py-1.5 text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 rounded-md transition-opacity"
+              >
+                Sign In
+              </a>
+            </div>
+          ) : filteredBlobs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-8 text-center text-muted-foreground my-auto h-64">
+              <FileJson className="w-8 h-8 mb-2 opacity-40" />
+              <p className="text-xs font-medium mb-3">No blobs yet</p>
+              <button
+                onClick={handleNewBlob}
+                className="px-4 py-1.5 text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 rounded-md transition-opacity cursor-pointer"
+              >
+                Create Blob
+              </button>
             </div>
           ) : (
             filteredBlobs.map((blob) => {
@@ -526,7 +622,7 @@ export default function BlobDashboard({ initialBlobs, initialSelectedBlob }: Blo
                 <button
                   key={blob.id}
                   onClick={() => handleSelectBlob(blob)}
-                  className={`w-full text-left p-3 rounded-md transition-all border flex flex-col gap-1.5 ${isActive
+                  className={`w-full text-left p-3 rounded-md transition-all border flex flex-col gap-1.5 cursor-pointer ${isActive
                       ? "bg-accent border-muted-foreground"
                       : "bg-transparent border-transparent hover:bg-accent/50"
                     }`}
