@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+export const runtime = "edge";
+
 // Recursive TypeScript interface generator
 function jsonToTypeScript(obj: any, interfaceName = "RootObject"): string {
   if (obj === null || typeof obj !== "object") {
