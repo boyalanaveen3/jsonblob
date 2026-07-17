@@ -7,6 +7,7 @@ import { Toolbar } from "@/components/playground/Toolbar";
 import { Sidebar } from "@/components/playground/Sidebar";
 import { Console } from "@/components/playground/Console";
 import MonacoEditor from "@/components/editor/MonacoEditor";
+import { AiAssistantPanel } from "@/components/editor/AiAssistantPanel";
 
 function PlaygroundContent() {
   const {
@@ -19,7 +20,11 @@ function PlaygroundContent() {
     updateActiveTabContent,
     updateActiveTabTitle,
     runActiveTabCode,
+    compilationError,
+    runtimeError,
   } = usePlaygroundStore();
+
+  const activeError = compilationError || runtimeError;
 
   const searchParams = useSearchParams();
   const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -143,6 +148,15 @@ function PlaygroundContent() {
           {/* Bottom Console logs */}
           <Console />
         </main>
+
+        {/* AI Assistant Sidebar Panel */}
+        <AiAssistantPanel
+          module="playground"
+          content={activeTab?.content || ""}
+          language={activeTab?.language || "javascript"}
+          error={activeError || undefined}
+          onInsertCode={(code) => updateActiveTabContent(code)}
+        />
       </div>
     </div>
   );

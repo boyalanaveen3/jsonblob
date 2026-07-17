@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePlaygroundStore } from "@/lib/store/playgroundStore";
 import { getSupportedLanguages } from "@/lib/runtime/registry";
+import { useAiStore } from "@/lib/store/aiStore";
 import {
   Play,
   Save,
@@ -29,6 +30,8 @@ export function Toolbar() {
     updateActiveTabLanguage,
     setTheme,
   } = usePlaygroundStore();
+
+  const { isOpen: isAiOpen, setIsOpen: setAiOpen } = useAiStore();
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const languages = getSupportedLanguages();
@@ -164,6 +167,20 @@ export function Toolbar() {
           className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors"
         >
           {theme === "vs-dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </button>
+
+        {/* AI Assistant Toggle */}
+        <button
+          onClick={() => setAiOpen(!isAiOpen)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold shadow-sm transition-all cursor-pointer ${
+            isAiOpen
+              ? "bg-violet-600 text-white shadow-sm shadow-violet-500/10"
+              : "border border-violet-500/25 hover:border-violet-500/40 bg-violet-600/5 hover:bg-violet-600/10 text-violet-500"
+          }`}
+          title="Toggle AI Developer Assistant"
+        >
+          <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+          <span className="hidden md:inline">AI Assistant</span>
         </button>
 
         <div className="h-4 w-px bg-border" />

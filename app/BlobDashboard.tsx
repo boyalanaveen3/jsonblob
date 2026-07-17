@@ -21,10 +21,13 @@ import {
   BookOpen,
   Edit2,
   Menu,
+  Sparkles,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { JsonTreeView } from "@/components/editor/JsonTreeView";
+import { useAiStore } from "@/lib/store/aiStore";
+import { AiAssistantPanel } from "@/components/editor/AiAssistantPanel";
 import dynamic from "next/dynamic";
 
 const MonacoEditor = dynamic(() => import("@/components/editor/MonacoEditor"), {
@@ -112,6 +115,7 @@ export default function BlobDashboard({
   const [renamingVal, setRenamingVal] = useState("");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeEditorTab, setActiveEditorTab] = useState<"editor" | "viewer">("editor");
+  const { isOpen: isAiOpen, setIsOpen: setAiOpen } = useAiStore();
 
   // Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -580,55 +584,14 @@ export default function BlobDashboard({
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            {userName ? (
-              <div className="flex items-center gap-1.5">
-                <div
-                  className="w-6 h-6 rounded-full bg-primary/10 border border-primary/20 text-primary font-bold text-[10px] flex items-center justify-center cursor-default uppercase"
-                  title={`Logged in as ${userName}`}
-                >
-                  {userName.charAt(0)}
-                </div>
-                <button
-                  onClick={handleSignOut}
-                  className="px-2 py-1 text-[9px] font-bold border border-red-500/20 hover:bg-red-500/10 text-red-500 rounded-md transition-colors"
-                  title="Sign Out"
-                >
-                  Sign Out
-                </button>
-              </div>
-            ) : (
-              <a
-                href="/auth"
-                className="px-2 py-1 text-[10px] font-bold border border-border hover:bg-accent rounded-md transition-colors"
-                title="Sign In / Sign Up"
-              >
-                Sign In
-              </a>
-            )}
-            <button
-              onClick={toggleTheme}
-              className="p-2 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
-              title="Toggle Theme"
-            >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-            <Link
-              href="/playground"
-              className="p-2 border border-border hover:bg-accent rounded-md transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground cursor-pointer"
-              title="Go to Code Playground"
-            >
-              <Terminal className="w-4 h-4" />
-            </Link>
-            {/* Close button for mobile menu */}
-            <button
-              onClick={() => setIsMobileMenuOpen(false)}
-              className="p-2 hover:bg-accent hover:text-accent-foreground rounded-md md:hidden transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground"
-              title="Close Sidebar"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+          {/* Close button for mobile menu */}
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="p-2 hover:bg-accent hover:text-accent-foreground rounded-md md:hidden transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground"
+            title="Close Sidebar"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Search */}
@@ -781,6 +744,57 @@ export default function BlobDashboard({
             })
           )}
         </div>
+
+        {/* Sidebar Footer */}
+        <div className="p-4 border-t border-border bg-accent/5 flex items-center justify-between gap-2 shrink-0">
+          {/* User profile / Login */}
+          {userName ? (
+            <div className="flex items-center gap-2 min-w-0">
+              <div
+                className="w-7 h-7 rounded-full bg-primary/10 border border-primary/20 text-primary font-bold text-xs flex items-center justify-center cursor-default uppercase shrink-0"
+                title={`Logged in as ${userName}`}
+              >
+                {userName.charAt(0)}
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-semibold truncate text-foreground leading-tight">{userName}</span>
+                <button
+                  onClick={handleSignOut}
+                  className="text-[10px] font-bold text-red-500 hover:text-red-600 transition-colors text-left"
+                  title="Sign Out"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          ) : (
+            <a
+              href="/auth"
+              className="px-2.5 py-1.5 text-xs font-bold border border-border hover:bg-accent rounded-md transition-colors"
+              title="Sign In / Sign Up"
+            >
+              Sign In
+            </a>
+          )}
+
+          {/* Theme & Playground Actions */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={toggleTheme}
+              className="p-2 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
+              title="Toggle Theme"
+            >
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+            <Link
+              href="/playground"
+              className="p-2 border border-border hover:bg-accent rounded-md transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground cursor-pointer"
+              title="Go to Code Playground"
+            >
+              <Terminal className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
       </aside>
 
       {/* ================= EDITOR WORKSPACE ================= */}
@@ -808,18 +822,18 @@ export default function BlobDashboard({
             {/* Code Playground Navigation */}
             <Link
               href="/playground"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-md transition-all shadow-sm shadow-violet-500/10 hover:shadow-violet-500/20 cursor-pointer"
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-md transition-all shadow-sm shadow-violet-500/10 hover:shadow-violet-500/20 cursor-pointer"
               title="Open Developer Code Playground"
             >
               <Terminal className="w-3.5 h-3.5" />
               <span className="hidden lg:inline">Playground</span>
             </Link>
-            <div className="w-[1px] h-5 bg-border mx-0.5" />
+            <div className="hidden md:block w-[1px] h-5 bg-border mx-0.5" />
 
             {/* Format */}
             <button
               onClick={handleBeautify}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
               title="Format JSON"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -827,7 +841,7 @@ export default function BlobDashboard({
             </button>
 
             {/* Autosave Toggle */}
-            <label className="flex items-center gap-1.5 cursor-pointer select-none border border-border px-2.5 py-1.5 rounded-md hover:bg-accent text-xs font-medium transition-all duration-200">
+            <label className="hidden sm:flex items-center gap-1.5 cursor-pointer select-none border border-border px-2.5 py-1.5 rounded-md hover:bg-accent text-xs font-medium transition-all duration-200">
               <input
                 type="checkbox"
                 checked={autosaveEnabled}
@@ -846,7 +860,7 @@ export default function BlobDashboard({
             {/* Clear */}
             <button
               onClick={handleClear}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent text-muted-foreground hover:text-foreground rounded-md transition-colors"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent text-muted-foreground hover:text-foreground rounded-md transition-colors"
               title="Clear Editor"
             >
               <X className="w-3.5 h-3.5" />
@@ -856,7 +870,7 @@ export default function BlobDashboard({
             {/* Reset */}
             <button
               onClick={handleReset}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent text-muted-foreground hover:text-foreground rounded-md transition-colors"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent text-muted-foreground hover:text-foreground rounded-md transition-colors"
               title="Reset Editor to Saved State"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -866,7 +880,7 @@ export default function BlobDashboard({
             {/* Validate */}
             <button
               onClick={handleValidate}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
               title="Validate JSON syntax"
             >
               <CheckSquare className="w-3.5 h-3.5" />
@@ -886,15 +900,27 @@ export default function BlobDashboard({
             {/* Download */}
             <button
               onClick={handleDownload}
-              className="p-2 border border-border hover:bg-accent rounded-md transition-colors"
+              className="hidden sm:flex p-2 border border-border hover:bg-accent rounded-md transition-colors"
               title="Download File"
             >
               <Download className="w-3.5 h-3.5" />
             </button>
 
+            {/* AI Assistant Toggle */}
+            <button
+              onClick={() => setAiOpen(!isAiOpen)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                isAiOpen
+                  ? "bg-violet-600 text-white shadow-sm shadow-violet-500/10"
+                  : "border border-violet-500/25 hover:border-violet-500/40 bg-violet-600/5 hover:bg-violet-600/10 text-violet-500"
+              }`}
+              title="Toggle AI Developer Assistant"
+            >
+              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+              <span className="hidden md:inline">AI Assistant</span>
+            </button>
+
             <div className="w-[1px] h-5 bg-border mx-0.5" />
-
-
 
             {/* Save */}
             <button
@@ -983,6 +1009,14 @@ export default function BlobDashboard({
               )}
             </div>
           </div>
+
+          {/* AI Assistant Sidebar Panel */}
+          <AiAssistantPanel
+            module="json"
+            content={content}
+            error={validationError || undefined}
+            onInsertCode={(code) => setContent(code)}
+          />
         </div>
 
         {/* Footer Status Bar */}
