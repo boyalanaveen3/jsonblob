@@ -1,4 +1,4 @@
-const BASE_URL = "https://5258bcf8.jsonblob-app.pages.dev";
+const BASE_URL = "https://2e4f009d.jsonblob-app.pages.dev";
 
 async function runTests() {
   console.log("=========================================");

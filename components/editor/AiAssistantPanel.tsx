@@ -32,12 +32,13 @@ const JSON_SUGGESTIONS = [
 ];
 
 const PLAYGROUND_SUGGESTIONS = [
-  { label: "Explain Code", prompt: "Provide a deep explanation of how this code works, listing functions, imports, and variables" },
+  { label: "Analyze Code", prompt: "Perform a comprehensive, deep code analysis and generate a structured report covering: summary, variables, functions, imports, classes/interfaces, execution flow, language features, complexity, bugs, optimizations, best practices, security, suggested comments, unit tests, a refactored version, and an overall quality score." },
+  { label: "Explain Code", prompt: "Explain the active editor code in detail" },
   { label: "Find Bugs", prompt: "Scan this code for logical, compiler, or syntax bugs, and suggest fixes" },
   { label: "Optimize", prompt: "Suggest performance optimizations and refactored code for improved speed" },
   { label: "Explain Errors", prompt: "Analyze current compiler diagnostics/runtime errors and explain why they happened and how to fix them" },
-  { label: "Generate Tests", prompt: "Generate Jest unit tests for this code" },
-  { label: "Add Comments", prompt: "Add detailed documentation comments and docstrings to this code" },
+  { label: "Generate Tests", prompt: "Generate unit tests for this code" },
+  { label: "Add Comments", prompt: "Add professional inline documentation comments to this code" },
 ];
 
 export function AiAssistantPanel({
@@ -131,22 +132,65 @@ export function AiAssistantPanel({
             <p className="text-[11px] text-muted-foreground max-w-[240px] mb-6 leading-relaxed">
               Ask questions or use quick actions to explain, generate, or refactor code and JSON.
             </p>
-            <div className="w-full space-y-1.5">
-              <span className="text-[10px] font-bold text-muted-foreground/80 uppercase tracking-wider block text-left mb-2 pl-1">
-                Suggested Actions
-              </span>
-              <div className="grid grid-cols-1 gap-1.5">
-                {suggestions.map((s, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleSend(s.prompt)}
-                    className="w-full text-left p-2.5 rounded-lg border border-border hover:border-violet-500/40 hover:bg-violet-500/5 text-xs font-medium transition-all flex items-center justify-between group cursor-pointer"
-                  >
-                    <span>{s.label}</span>
-                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-violet-500 transition-colors" />
-                  </button>
-                ))}
-              </div>
+            <div className="w-full space-y-3">
+              {module === "playground" ? (
+                <>
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-wider block text-left pl-1">
+                      Primary Entry Action
+                    </span>
+                    <button
+                      onClick={() => handleSend(suggestions[0].prompt)}
+                      className="w-full text-left p-3.5 rounded-xl border border-violet-500/30 bg-gradient-to-r from-violet-600/10 to-indigo-600/10 hover:from-violet-600/15 hover:to-indigo-600/15 hover:border-violet-500/50 text-xs font-bold transition-all flex items-center justify-between group cursor-pointer shadow-sm shadow-violet-500/5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-violet-500 animate-pulse shrink-0" />
+                        <div className="flex flex-col text-left">
+                          <span className="text-foreground font-bold">Analyze Code</span>
+                          <span className="text-[10px] text-muted-foreground font-normal mt-0.5">Run a comprehensive quality, complexity, and bug audit</span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-violet-500 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-wider block text-left pl-1">
+                      Follow-up tools
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {suggestions.slice(1).map((s, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => handleSend(s.prompt)}
+                          className="w-full text-left px-2.5 py-2 rounded-lg border border-border hover:border-violet-500/30 hover:bg-violet-500/5 text-[11px] font-medium transition-all flex items-center justify-between group cursor-pointer"
+                        >
+                          <span className="truncate">{s.label}</span>
+                          <ChevronRight className="w-3 h-3 text-muted-foreground group-hover:text-violet-500 transition-colors shrink-0 ml-1" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <span className="text-[10px] font-bold text-muted-foreground/80 uppercase tracking-wider block text-left pl-1">
+                    Suggested Actions
+                  </span>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {suggestions.map((s, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleSend(s.prompt)}
+                        className="w-full text-left p-2.5 rounded-lg border border-border hover:border-violet-500/40 hover:bg-violet-500/5 text-xs font-medium transition-all flex items-center justify-between group cursor-pointer"
+                      >
+                        <span>{s.label}</span>
+                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-violet-500 transition-colors" />
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         ) : (
@@ -172,7 +216,7 @@ export function AiAssistantPanel({
       <div className="p-3 border-t border-border bg-card shrink-0">
         {messages.length > 0 && (
           <div className="flex gap-1 overflow-x-auto pb-2 scrollbar-none shrink-0 mb-1">
-            {suggestions.slice(0, 3).map((s, idx) => (
+            {(module === "playground" ? suggestions.slice(1) : suggestions.slice(0, 4)).map((s, idx) => (
               <button
                 key={idx}
                 onClick={() => handleSend(s.prompt)}
@@ -244,47 +288,87 @@ function formatAiResponse(text: string, onInsert: (code: string) => void) {
         <AiCodeBlockCard key={index} language={language} code={code} onInsert={onInsert} />
       );
     } else {
-      // Inline formatting (paragraphs, lists, and headers)
+      // Inline formatting
       return (
         <div key={index} className="space-y-2">
-          {part.split("\n\n").map((para, pIdx) => {
-            const trimmed = para.trim();
-            if (!trimmed) return null;
-
-            // Header Check
-            if (trimmed.startsWith("###")) {
-              return (
-                <h4 key={pIdx} className="font-bold text-sm text-foreground mt-2 border-b border-border/50 pb-1">
-                  {trimmed.replace(/^###\s*/, "")}
-                </h4>
-              );
-            }
-            if (trimmed.startsWith("##")) {
-              return (
-                <h3 key={pIdx} className="font-bold text-base text-foreground mt-3">
-                  {trimmed.replace(/^##\s*/, "")}
-                </h3>
-              );
-            }
-
-            // Unordered List Check
-            if (trimmed.startsWith("-") || trimmed.startsWith("*")) {
-              return (
-                <ul key={pIdx} className="list-disc pl-4 space-y-1 my-1.5">
-                  {trimmed.split("\n").map((li, lIdx) => (
-                    <li key={lIdx}>
-                      {formatInlineBold(li.replace(/^[-*]\s*/, ""))}
-                    </li>
-                  ))}
-                </ul>
-              );
-            }
-
-            return <p key={pIdx} className="leading-relaxed">{formatInlineBold(trimmed)}</p>;
-          })}
+          {parseCollapsible(part, onInsert)}
         </div>
       );
     }
+  });
+}
+
+function parseCollapsible(text: string, onInsert: (code: string) => void): React.ReactNode {
+  const parts = text.split("</details>");
+  return (
+    <>
+      {parts.map((p, pIdx) => {
+        if (p.includes("<details>")) {
+          const subParts = p.split("<details>");
+          const before = subParts[0];
+          const inside = subParts[1] || "";
+          
+          const summaryMatch = inside.match(/<summary>([\s\S]*?)<\/summary>/);
+          const summary = summaryMatch ? summaryMatch[1] : "Details";
+          const body = inside.replace(/<summary>[\s\S]*?<\/summary>/, "");
+          
+          return (
+            <React.Fragment key={pIdx}>
+              {before.trim() && formatMarkdownText(before, onInsert)}
+              <details className="border border-border/80 rounded-lg p-2.5 bg-accent/10 transition-all open:bg-accent/20 my-2">
+                <summary className="font-semibold text-xs text-foreground cursor-pointer select-none outline-none hover:text-violet-500 transition-colors">
+                  {summary}
+                </summary>
+                <div className="mt-2 pl-2 text-[11px] leading-relaxed text-muted-foreground border-l border-border/60 space-y-2">
+                  {formatMarkdownText(body, onInsert)}
+                </div>
+              </details>
+            </React.Fragment>
+          );
+        } else {
+          return p.trim() ? <React.Fragment key={pIdx}>{formatMarkdownText(p, onInsert)}</React.Fragment> : null;
+        }
+      })}
+    </>
+  );
+}
+
+function formatMarkdownText(text: string, onInsert: (code: string) => void) {
+  const paras = text.split("\n\n");
+  return paras.map((para, pIdx) => {
+    const trimmed = para.trim();
+    if (!trimmed) return null;
+
+    // Header Check
+    if (trimmed.startsWith("###")) {
+      return (
+        <h4 key={pIdx} className="font-bold text-sm text-foreground mt-2 border-b border-border/50 pb-1">
+          {trimmed.replace(/^###\s*/, "")}
+        </h4>
+      );
+    }
+    if (trimmed.startsWith("##")) {
+      return (
+        <h3 key={pIdx} className="font-bold text-base text-foreground mt-3">
+          {trimmed.replace(/^##\s*/, "")}
+        </h3>
+      );
+    }
+
+    // Unordered List Check
+    if (trimmed.startsWith("-") || trimmed.startsWith("*")) {
+      return (
+        <ul key={pIdx} className="list-disc pl-4 space-y-1 my-1.5">
+          {trimmed.split("\n").map((li, lIdx) => (
+            <li key={lIdx}>
+              {formatInlineBold(li.replace(/^[-*]\s*/, ""))}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    return <p key={pIdx} className="leading-relaxed">{formatInlineBold(trimmed)}</p>;
   });
 }
 

@@ -256,3 +256,58 @@ The application should behave like GitHub, Notion, Postman, or Google Drive:
 Users can only access their own data unless sharing is explicitly implemented.
 
 No cross-user data leakage should be possible.
+
+issue fro  close buttun blinking in monaco editor
+
+There is a focus management issue with the Monaco Editor Find Widget inside the JSON Blob editor.
+
+Current Problem
+
+1. User presses Ctrl + F.
+2. Monaco Find Widget opens.
+3. User searches normally.
+4. User closes the Find Widget using the ❌ (Close) button.
+5. The Find Widget disappears.
+6. The editor does not properly regain focus.
+7. The caret/focus continues blinking as if the Find input still owns focus.
+
+This creates a poor editing experience.
+
+Expected Behaviour
+
+After closing the Find Widget (using the Close button, Escape key, or any other supported close action):
+
+- The Monaco editor should automatically regain focus.
+- The text cursor should return to its previous editing position.
+- Keyboard shortcuts should immediately work again.
+- Typing should continue in the editor without requiring an additional click.
+- No hidden Find Widget element should retain focus.
+
+Requirements
+
+1. Detect when the Monaco Find Widget closes.
+2. Restore focus using the Monaco editor API.
+3. Preserve the previous cursor position and selection.
+4. Ensure this works for:
+   - Close button (❌)
+   - Escape key
+   - Any programmatic close action
+5. Do not interfere with Monaco's built-in Find Widget behavior.
+6. Ensure there are no hidden DOM elements retaining focus after the widget closes.
+7. Verify the fix in both Dark and Light themes.
+8. Test keyboard navigation:
+   - Ctrl + F
+   - Ctrl + H
+   - Escape
+   - F3
+   - Shift + F3
+9. Test multiple open/close cycles to ensure focus is always restored correctly.
+
+Acceptance Criteria
+
+- After closing the Find Widget, the editor is immediately ready for typing.
+- The caret is visible only inside the editor.
+- No blinking cursor remains in the hidden Find Widget.
+- Users never need to click back into the editor manually after closing Find.
+
+Please implement this using Monaco Editor's official APIs and proper focus management rather than DOM hacks.

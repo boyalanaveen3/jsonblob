@@ -1,6 +1,6 @@
 const { chromium } = require("@playwright/test");
 
-const BASE_URL = "http://localhost:3000";
+const BASE_URL = "https://2e4f009d.jsonblob-app.pages.dev";
 
 async function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));

@@ -46,6 +46,51 @@ export function MonacoEditor({ value, onChange, isDark, language = "json" }: Mon
       (window as any).monaco = monaco;
       (window as any).currentEditor = editor;
     }
+
+    // Set up listeners for the Find/Replace state to restore focus on close
+    try {
+      const findController = editor.getContribution("editor.contrib.findController");
+      if (findController) {
+        const findState = findController.getState();
+        if (findState) {
+          findState.onFindReplaceStateChange((e: any) => {
+            if (e.isRevealed === false || (e.isRevealed === undefined && !findState.isRevealed)) {
+              const selection = editor.getSelection();
+              setTimeout(() => {
+                editor.focus();
+                if (selection) {
+                  editor.setSelection(selection);
+                }
+              }, 50);
+            }
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to attach Monaco FindController listener:", err);
+    }
+
+    try {
+      const contextKeyService = editor._contextKeyService;
+      if (contextKeyService) {
+        contextKeyService.onDidChangeContext((e: any) => {
+          if (e.affectsSome && e.affectsSome(new Set(["findWidgetVisible"]))) {
+            const isVisible = contextKeyService.getContextValue("findWidgetVisible");
+            if (!isVisible) {
+              const selection = editor.getSelection();
+              setTimeout(() => {
+                editor.focus();
+                if (selection) {
+                  editor.setSelection(selection);
+                }
+              }, 50);
+            }
+          }
+        });
+      }
+    } catch (err) {
+      console.warn("Failed to attach Monaco contextKeyService listener:", err);
+    }
   }
 
   return (

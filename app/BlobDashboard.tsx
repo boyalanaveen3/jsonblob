@@ -266,6 +266,9 @@ export default function BlobDashboard({
   const handleSignOut = async () => {
     try {
       await signOutAction();
+      // Clear client side cookies just in case
+      document.cookie = "userId=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      document.cookie = "userName=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
       localStorage.removeItem("user_name");
       localStorage.removeItem("user_email");
       setUserName(null);
@@ -273,8 +276,11 @@ export default function BlobDashboard({
       setSelectedBlob(null);
       setContent(JSON.stringify({ welcome: "JSON Blob MVP", status: "ready" }, null, 2));
       setTitle("Untitled Blob");
-      router.push("/");
       showToast("success", "Signed out successfully");
+      // Force a full clean page reload to refresh server components and blow away next-router cache
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 500);
     } catch (err: any) {
       showToast("error", `Failed to sign out: ${err.message}`);
     }
@@ -813,7 +819,7 @@ export default function BlobDashboard({
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="text-base md:text-lg font-semibold bg-transparent border-none outline-none focus:ring-0 w-full truncate"
+              className="text-base md:text-lg font-semibold bg-transparent border-none outline-none focus:ring-0 w-full truncate text-foreground min-w-[120px] md:min-w-[200px]"
               placeholder="Untitled Blob"
             />
           </div>

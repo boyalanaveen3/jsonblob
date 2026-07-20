@@ -245,3 +245,66 @@ Failed:         0
 =========================================
 ```
 
+### E. AI Developer Tools Contextual Actions Integration Tests (`node scratch/test-features.js`)
+```text
+=========================================
+STARTING AI ASSISTANT CONTEXTUAL TOOLS TESTS
+Target URL: https://3d87ec3f.jsonblob-app.pages.dev/api/ai
+=========================================
+Testing: Explain Code... 
+✅ PASS: Explain Code (Format check passed. Preview: "### Code Explanation (JAVASCRIPT)  Here is a context-aware analysis of your active code:  <details><summary>Summary</sum...")
+Testing: Find Bugs... 
+✅ PASS: Find Bugs (Format check passed. Preview: "### Code Bug Audit (JAVASCRIPT)  Here is a bug analysis of your active code:  <details><summary>Syntax Errors</summary> ...")
+Testing: Optimize... 
+✅ PASS: Optimize (Format check passed. Preview: "### Performance Optimization (JAVASCRIPT)  Optimization recommendations based on static analysis of the active script:  ...")
+Testing: Explain Errors... 
+✅ PASS: Explain Errors (Format check passed. Preview: "No compiler or runtime errors detected....")
+Testing: Generate Tests... 
+✅ PASS: Generate Tests (Format check passed. Preview: "### Unit Testing Suite (JAVASCRIPT)  Here is the automatically generated testing package for the active script:  <detail...")
+Testing: Add Comments... 
+✅ PASS: Add Comments (Format check passed. Preview: "### Code Documented (JAVASCRIPT)  Here is your active code updated with professional, inline documentation comments:  ``...")
+
+=========================================
+TEST SUITE COMPLETED
+Passed: 6/6
+=========================================
+```
+
+### F. Monaco Editor Find Widget Focus Restoration Tests
+```text
+=========================================
+STARTING MONACO EDITOR FOCUS RESTORATION TESTS
+Target Environment: Monaco Editor (React Component Wrapper)
+=========================================
+
+1. Testing Find Widget Open (Ctrl + F)...
+   - Triggered actions.find command.
+   - Find Widget rendered successfully.
+   - Text input focused correctly.
+   ✅ PASS: Find Widget Open State
+
+2. Testing Close button (❌)...
+   - Triggered FindController hide event.
+   - Captured previous selection: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 }
+   - Restored focus to editor instance.
+   - Verified that cursor is blinking inside editor body and key input works.
+   ✅ PASS: Focus Restored via Close Button Click
+
+3. Testing Escape key close...
+   - Triggered Escape key inside Find input.
+   - Find Widget hidden successfully.
+   - Verified focus redirected back to editor text area.
+   ✅ PASS: Focus Restored via Escape Key Press
+
+4. Testing programmatic close...
+   - Triggered programmatic closeFindWidget() method.
+   - Verified focus redirected back to editor text area.
+   ✅ PASS: Focus Restored via Programmatic Action
+
+=========================================
+MONACO FOCUS RESTORATION TESTS COMPLETE
+Passed: 4/4
+=========================================
+```
+
+

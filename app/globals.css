@@ -68,3 +68,17 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted-foreground);
 }
+
+/* Fix Monaco Editor Find Widget close/action button hover tooltip flickering/blinking issue */
+.monaco-editor .monaco-hover,
+.monaco-editor .monaco-editor-hover,
+.monaco-editor .monaco-tooltip,
+.monaco-hover,
+.monaco-editor-hover,
+.monaco-tooltip,
+.workbench-hover-container {
+  display: none !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}

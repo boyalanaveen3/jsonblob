@@ -131,8 +131,20 @@ export async function signInAction(email: string, password: string) {
 export async function signOutAction() {
   try {
     const cookieStore = await cookies();
-    cookieStore.delete("userId");
-    cookieStore.delete("userName");
+    cookieStore.set("userId", "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 0,
+      path: "/",
+    });
+    cookieStore.set("userName", "", {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 0,
+      path: "/",
+    });
     return { success: true };
   } catch (error: any) {
     console.error("SignOut error:", error);
