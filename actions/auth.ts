@@ -21,14 +21,14 @@ export async function signUpAction(name: string, email: string, password: string
     }
 
     const db = await getDb();
-    
+
     // Check if user already exists
     const existingRows = await db
       .select()
       .from(users)
       .where(eq(users.email, email.trim().toLowerCase()))
       .all();
-    
+
     if (existingRows.length > 0) {
       return { success: false, error: "Email is already registered" };
     }

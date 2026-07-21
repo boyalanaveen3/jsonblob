@@ -268,25 +268,29 @@ export default function BlobDashboard({
 
   const handleSignOut = async () => {
     try {
-      await signOutAction();
-      // Clear client side cookies just in case
-      document.cookie = "userId=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-      document.cookie = "userName=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-      localStorage.removeItem("user_name");
-      localStorage.removeItem("user_email");
-      setUserName(null);
-      setBlobsList([]);
-      setSelectedBlob(null);
-      setContent(JSON.stringify({ welcome: "JSON Blob MVP", status: "ready" }, null, 2));
-      setTitle("Untitled Blob");
-      showToast("success", "Signed out successfully");
-      // Force a full clean page reload to refresh server components and blow away next-router cache
-      setTimeout(() => {
-        window.location.href = "/";
-      }, 500);
+      await Promise.allSettled([
+        fetch("/api/auth/logout", { method: "POST" }),
+        signOutAction(),
+      ]);
     } catch (err: any) {
-      showToast("error", `Failed to sign out: ${err.message}`);
+      console.warn("Sign out request error:", err);
     }
+    // Clear client side cookies & storage unconditionally
+    document.cookie = "userId=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0";
+    document.cookie = "userName=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0";
+    localStorage.removeItem("user_name");
+    localStorage.removeItem("user_email");
+    sessionStorage.clear();
+    setUserName(null);
+    setBlobsList([]);
+    setSelectedBlob(null);
+    setContent(JSON.stringify({ welcome: "JSON Blob MVP", status: "ready" }, null, 2));
+    setTitle("Untitled Blob");
+    showToast("success", "Signed out successfully");
+    // Force a full clean page reload to refresh server components and clear router cache
+    setTimeout(() => {
+      window.location.href = "/";
+    }, 150);
   };
 
   // --- Filtered Blobs ---
