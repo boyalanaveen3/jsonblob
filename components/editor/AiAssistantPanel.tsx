@@ -37,6 +37,9 @@ const JSON_SUGGESTIONS = [
   { label: "Minify JSON", prompt: "Minify this JSON into a compact single-line payload" },
   { label: "TypeScript Interface", prompt: "Convert this JSON to a complete TypeScript interface with deep nested definitions" },
   { label: "JavaScript Types", prompt: "Generate JavaScript type definitions for this JSON payload" },
+  { label: "Python Dataclass", prompt: "Convert this JSON to Python dataclass models" },
+  { label: "Java POJO", prompt: "Convert this JSON to Java POJO classes" },
+  { label: "C# Models", prompt: "Convert this JSON to C# model structures" },
   { label: "JSON Schema", prompt: "Generate a JSON Schema for this object" },
   { label: "Generate Mock Data", prompt: "Generate realistic mock data for this JSON structure" },
   { label: "Flatten JSON", prompt: "Flatten this nested JSON into a single-level object" },
@@ -92,12 +95,13 @@ export function AiAssistantPanel({
   const suggestions = module === "json" ? JSON_SUGGESTIONS : PLAYGROUND_SUGGESTIONS;
 
   // Active Tab details from Playground Store if available
-  const activeTab = playgroundStore.tabs.find((t) => t.id === playgroundStore.activeTabId);
+  const isPlayground = module === "playground";
+  const activeTab = isPlayground ? playgroundStore.tabs.find((t) => t.id === playgroundStore.activeTabId) : undefined;
   const activeFileName = activeFileNameProp || activeTab?.title || (module === "json" ? "document.json" : "scratchpad.js");
-  const activeLang = activeTab?.language || language || "javascript";
-  const activeCompError = playgroundStore.compilationError || error;
-  const activeRunError = playgroundStore.runtimeError;
-  const activeConsoleLogs = playgroundStore.consoleLogs.join("\n");
+  const activeLang = isPlayground ? (activeTab?.language || language || "javascript") : (language || "json");
+  const activeCompError = isPlayground ? (playgroundStore.compilationError || error) : error;
+  const activeRunError = isPlayground ? playgroundStore.runtimeError : undefined;
+  const activeConsoleLogs = isPlayground ? playgroundStore.consoleLogs.join("\n") : "";
 
   const getSelectedText = (): string | undefined => {
     if (typeof window !== "undefined" && (window as any).currentEditor) {
@@ -157,7 +161,7 @@ export function AiAssistantPanel({
     setShowCommandsMenu(false);
 
     const selectedText = getSelectedText();
-    const currentCode = activeTab?.content || content || "";
+    const currentCode = isPlayground ? (activeTab?.content || content || "") : content;
 
     const aiContext: AIContext = {
       editorCode: currentCode,

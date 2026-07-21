@@ -45,6 +45,10 @@ export function MonacoEditor({ value, onChange, isDark, language = "json" }: Mon
     if (typeof window !== "undefined") {
       (window as any).monaco = monaco;
       (window as any).currentEditor = editor;
+      (window as any).setEditorValue = (val: string) => {
+        editor.setValue(val);
+        onChange(val);
+      };
     }
 
     // Set up listeners for the Find/Replace state to restore focus on close

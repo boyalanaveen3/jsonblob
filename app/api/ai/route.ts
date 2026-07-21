@@ -192,18 +192,53 @@ function jsonToCSharp(obj: any, className = "RootClass"): string {
 
 function fixInvalidJson(str: string): string {
   let cleaned = str.trim();
+  // Strip control characters inside string literals (except newlines/tabs)
+  cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "");
   // Replace single quotes with double quotes
   cleaned = cleaned.replace(/'/g, '"');
   // Remove trailing commas before closing braces/brackets
   cleaned = cleaned.replace(/,\s*([\]}])/g, "$1");
   // Wrap unquoted keys
   cleaned = cleaned.replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":');
+  // Fix unclosed double quotes on key-value lines (e.g. "status": "ready -> "status": "ready")
+  cleaned = cleaned.replace(/(:\s*"[^"\n\r]*?)(\s*[,}\n\r])/g, '$1"$2');
+  
   try {
     const parsed = JSON.parse(cleaned);
     return JSON.stringify(parsed, null, 2);
-  } catch (err) {
-    // If simple fixes fail, return original
-    return str;
+  } catch {
+    // Attempt line-by-line quote and brace balancing
+    const lines = cleaned.split("\n").map((line) => {
+      const quotes = (line.match(/"/g) || []).length;
+      if (quotes % 2 !== 0) {
+        const trimmed = line.trimEnd();
+        if (trimmed.endsWith(",")) {
+          return line.replace(/,\s*$/, '",');
+        }
+        return line + '"';
+      }
+      return line;
+    });
+    let heuristic = lines.join("\n");
+
+    const openBraces = (heuristic.match(/\{/g) || []).length;
+    const closeBraces = (heuristic.match(/\}/g) || []).length;
+    for (let i = 0; i < openBraces - closeBraces; i++) {
+      heuristic += "\n}";
+    }
+
+    const openBrackets = (heuristic.match(/\[/g) || []).length;
+    const closeBrackets = (heuristic.match(/\]/g) || []).length;
+    for (let i = 0; i < openBrackets - closeBrackets; i++) {
+      heuristic += "\n]";
+    }
+
+    try {
+      const parsedHeuristic = JSON.parse(heuristic);
+      return JSON.stringify(parsedHeuristic, null, 2);
+    } catch {
+      return str;
+    }
   }
 }
 
@@ -257,15 +292,15 @@ function generateMockResponse(
   
   if (module === "json") {
     let parsedJson: any = null;
+    let originalParseFailed = false;
     try {
       parsedJson = JSON.parse(content);
     } catch (e) {
+      originalParseFailed = true;
       // Attempt a best-effort repair for common JSON issues (single quotes, trailing commas, unquoted keys)
       try {
         const repaired = fixInvalidJson(content);
         parsedJson = JSON.parse(repaired);
-        // if repair succeeded, replace content for downstream responses
-        content = repaired;
       } catch (inner) {
         // keep parsedJson as null if repair fails
       }
@@ -274,19 +309,33 @@ function generateMockResponse(
     const action = detectJsonAction(prompt);
 
     if (action === "schema") {
-      if (!parsedJson) {
-        return "### JSON Schema Generation Error\n\nUnable to generate a JSON Schema because the editor contains invalid JSON. Please fix syntax errors first.";
+      let targetObj = parsedJson;
+      let repairNotice = "";
+      if (!targetObj) {
+        try {
+          const repaired = fixInvalidJson(content);
+          targetObj = JSON.parse(repaired);
+          repairNotice = `> ⚠️ **Notice**: Syntax error detected (\`${error || "Invalid JSON"}\`). Schema below was generated from auto-repaired JSON.\n\n`;
+        } catch {
+          return "### JSON Schema Generation Error\n\nUnable to generate a JSON Schema because the editor contains unresolvable JSON syntax errors. Please fix syntax errors first.";
+        }
       }
-      const schema = generateJsonSchema(parsedJson);
-      return `### JSON Schema\n\nHere is a draft JSON Schema for your payload:\n\n\`\`\`json\n${JSON.stringify(schema, null, 2)}\n\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
+      const schema = generateJsonSchema(targetObj);
+      return `### JSON Schema\n\n${repairNotice}Here is a draft JSON Schema for your payload:\n\n\`\`\`json\n${JSON.stringify(schema, null, 2)}\n\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
     }
 
     if (action === "flatten") {
-      if (!parsedJson) {
-        return "### Flatten JSON\n\nUnable to flatten invalid JSON. Please fix the syntax first.";
+      let targetObj = parsedJson;
+      if (!targetObj) {
+        try {
+          const repaired = fixInvalidJson(content);
+          targetObj = JSON.parse(repaired);
+        } catch {
+          return "### Flatten JSON\n\nUnable to flatten invalid JSON. Please fix the syntax first.";
+        }
       }
-      const flat = flattenJson(parsedJson);
-      return `### Flattened JSON\n\n\`\`\`json\n${JSON.stringify(flat, null, 2)}\n\`\`\``;
+      const flat = flattenJson(targetObj);
+      return `### Flattened JSON\n\n\`\`\`json\n${JSON.stringify(flat, null, 2)}\n\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
     }
 
     if (action === "unflatten") {
@@ -298,7 +347,7 @@ function generateMockResponse(
         return "### Unflatten JSON\n\nPlease provide a flat JSON object in the editor or prompt so I can expand it back into a nested structure.";
       }
       const restored = unflattenJson(parsedFlat as Record<string, unknown>);
-      return `### Unflattened JSON\n\n\`\`\`json\n${JSON.stringify(restored, null, 2)}\n\`\`\``;
+      return `### Unflattened JSON\n\n\`\`\`json\n${JSON.stringify(restored, null, 2)}\n\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
     }
 
     if (action === "mock") {
@@ -308,7 +357,7 @@ function generateMockResponse(
         createdAt: new Date().toISOString(),
         active: true,
       };
-      return `### Mock Data\n\nHere is a realistic mock object:\n\n\`\`\`json\n${JSON.stringify(sample, null, 2)}\n\`\`\``;
+      return `### Mock Data\n\nHere is a realistic mock object:\n\n\`\`\`json\n${JSON.stringify(sample, null, 2)}\n\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
     }
 
     if (action === "compare") {
@@ -325,72 +374,122 @@ function generateMockResponse(
       }
       const incoming = { updatedAt: new Date().toISOString() };
       const merged = mergeJson(parsedJson, incoming);
-      return `### Merged JSON\n\n\`\`\`json\n${JSON.stringify(merged, null, 2)}\n\`\`\``;
+      return `### Merged JSON\n\n\`\`\`json\n${JSON.stringify(merged, null, 2)}\n\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
     }
 
     if (action === "beautify") {
-      if (!parsedJson) {
-        const fixed = fixInvalidJson(content);
-        return `### JSON Beautified\n\n\`\`\`json\n${fixed}\n\`\`\``;
-      }
-      return `### JSON Beautified\n\n\`\`\`json\n${JSON.stringify(parsedJson, null, 2)}\n\`\`\``;
+      const fixed = fixInvalidJson(content);
+      return `### JSON Beautified\n\nHere is the formatted, beautified JSON payload:\n\n\`\`\`json\n${fixed}\n\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
     }
 
     if (action === "minify") {
-      if (!parsedJson) {
-        return "### Minify JSON\n\nUnable to minify invalid JSON. Please fix the syntax first.";
+      let targetObj = parsedJson;
+      if (!targetObj) {
+        try {
+          const repaired = fixInvalidJson(content);
+          targetObj = JSON.parse(repaired);
+        } catch {
+          return "### Minify JSON\n\nUnable to minify invalid JSON. Please fix the syntax first.";
+        }
       }
-      return `### Minified JSON\n\n\`\`\`json\n${JSON.stringify(parsedJson)}\n\`\`\``;
-    }
-
-    // TypeScript Interface
-    if (normalizedPrompt.includes("typescript") || normalizedPrompt.includes("ts interface")) {
-      if (!parsedJson) {
-        return "### TypeScript Interface Generation Error\n\nUnable to generate TypeScript interface because the editor contains invalid JSON. Please fix syntax errors first.";
-      }
-      const tsCode = jsonToTypeScript(parsedJson);
-      return `### Recursive TypeScript Interface\n\nHere is the complete recursively defined TypeScript interface structures representing your full JSON payload hierarchy:\n\n\`\`\`typescript\n${tsCode}\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
-    }
-
-    if (normalizedPrompt.includes("javascript types") || normalizedPrompt.includes("js types") || normalizedPrompt.includes("javascript type")) {
-      if (!parsedJson) {
-        return "### JavaScript Types\n\nUnable to generate JavaScript types because the editor contains invalid JSON. Please fix syntax errors first.";
-      }
-      const jsTypes = `export const payload = ${JSON.stringify(parsedJson, null, 2)};\n\nexport type JsonValue = typeof payload;`;
-      return `### JavaScript Types\n\nHere is a simple JavaScript type-friendly shape based on your JSON payload:\n\n\`\`\`javascript\n${jsTypes}\n\`\`\``;
-    }
-
-    // Python Class
-    if (normalizedPrompt.includes("python") || normalizedPrompt.includes("dataclass")) {
-      if (!parsedJson) return "Unable to generate Python dataclass: The editor contains invalid JSON.";
-      const pyCode = jsonToPython(parsedJson);
-      return `### Python Dataclass Models\n\nHere are the complete Python dataclass structures representing your JSON layout:\n\n\`\`\`python\n${pyCode}\`\`\``;
-    }
-
-    // Java POJO
-    if (normalizedPrompt.includes("java")) {
-      if (!parsedJson) return "Unable to generate Java class: The editor contains invalid JSON.";
-      const javaCode = jsonToJava(parsedJson);
-      return `### Java POJO Classes\n\nHere are the recursively generated Java models representing your JSON data:\n\n\`\`\`java\n${javaCode}\`\`\``;
-    }
-
-    // C# Model
-    if (normalizedPrompt.includes("c#") || normalizedPrompt.includes("csharp")) {
-      if (!parsedJson) return "Unable to generate C# model: The editor contains invalid JSON.";
-      const csCode = jsonToCSharp(parsedJson);
-      return `### C# Model Structures\n\nHere are the recursively complete C# classes representing your JSON:\n\n\`\`\`csharp\n${csCode}\`\`\``;
+      return `### Minified JSON\n\n\`\`\`json\n${JSON.stringify(targetObj)}\n\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
     }
 
     if (action === "validate") {
-      if (!parsedJson) {
-        return "### JSON Validation\n\nThe editor contains invalid JSON. Please fix the syntax and try again.";
+      if (!parsedJson || originalParseFailed) {
+        const repaired = fixInvalidJson(content);
+        return `### JSON Syntax Validation Diagnostics\n\n❌ **JSON Syntax Error Detected**\n\n**Parser Output Diagnostic:**\n> \`${error || "Bad control character or unclosed string literal in JSON"}\`\n\n**Root Cause Breakdown:**\n- The editor content violates standard RFC 8259 JSON specifications.\n- Common issues include missing closing quotes, unescaped control characters, or trailing commas.\n\n**Repaired Payload:**\n\`\`\`json\n${repaired}\n\`\`\`\n\n*Click the **Insert** button on the code block header to apply the repaired JSON to your editor workspace.*`;
       }
-      return `### JSON Validation\n\nThe JSON is valid and parses successfully.\n\n\`\`\`json\n${JSON.stringify(parsedJson, null, 2)}\n\`\`\``;
+      return `### JSON Syntax Validation Diagnostics\n\n✅ **Valid RFC 8259 JSON**\n\nYour JSON document is syntax-clean and parses successfully with zero errors.\n\n\`\`\`json\n${JSON.stringify(parsedJson, null, 2)}\n\`\`\``;
     }
 
     if (action === "fix") {
       const repaired = fixInvalidJson(content);
-      return `### JSON Syntax Repair\n\nHere is the repaired JSON:\n\n\`\`\`json\n${repaired}\n\`\`\``;
+      return `### JSON Syntax Repair\n\n${error ? `**Detected Syntax Error:**\n> \`${error}\`\n\n` : ""}Here is the repaired, syntax-valid JSON payload:\n\n\`\`\`json\n${repaired}\n\`\`\`\n\n*Click the **Insert** button on the code block header to apply this repaired JSON to your editor workspace.*`;
+    }
+
+    // TypeScript Interface
+    if (normalizedPrompt.includes("typescript") || normalizedPrompt.includes("ts interface")) {
+      let targetObj = parsedJson;
+      let repairNotice = "";
+      if (!targetObj) {
+        try {
+          const repaired = fixInvalidJson(content);
+          targetObj = JSON.parse(repaired);
+          repairNotice = `> ⚠️ **Notice**: Syntax error detected (\`${error || "Invalid JSON"}\`). Definitions below were generated from auto-repaired JSON.\n\n`;
+        } catch {
+          return "### TypeScript Interface Generation Error\n\nUnable to generate TypeScript interface because the editor contains unresolvable JSON syntax errors. Please fix syntax errors first.";
+        }
+      }
+      const tsCode = jsonToTypeScript(targetObj);
+      return `### Recursive TypeScript Interface\n\n${repairNotice}Here is the complete recursively defined TypeScript interface structures representing your JSON payload hierarchy:\n\n\`\`\`typescript\n${tsCode}\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
+    }
+
+    if (normalizedPrompt.includes("javascript types") || normalizedPrompt.includes("js types") || normalizedPrompt.includes("javascript type")) {
+      let targetObj = parsedJson;
+      let repairNotice = "";
+      if (!targetObj) {
+        try {
+          const repaired = fixInvalidJson(content);
+          targetObj = JSON.parse(repaired);
+          repairNotice = `> ⚠️ **Notice**: Syntax error detected (\`${error || "Invalid JSON"}\`). Definitions below were generated from auto-repaired JSON.\n\n`;
+        } catch {
+          return "### JavaScript Types\n\nUnable to generate JavaScript types because the editor contains unresolvable JSON syntax errors. Please fix syntax errors first.";
+        }
+      }
+      const jsTypes = `export const payload = ${JSON.stringify(targetObj, null, 2)};\n\nexport type JsonValue = typeof payload;`;
+      return `### JavaScript Types\n\n${repairNotice}Here is a simple JavaScript type-friendly shape based on your JSON payload:\n\n\`\`\`javascript\n${jsTypes}\n\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
+    }
+
+    // Python Class
+    if (normalizedPrompt.includes("python") || normalizedPrompt.includes("dataclass")) {
+      let targetObj = parsedJson;
+      let repairNotice = "";
+      if (!targetObj) {
+        try {
+          const repaired = fixInvalidJson(content);
+          targetObj = JSON.parse(repaired);
+          repairNotice = `> ⚠️ **Notice**: Syntax error detected (\`${error || "Invalid JSON"}\`). Definitions below were generated from auto-repaired JSON.\n\n`;
+        } catch {
+          return "Unable to generate Python dataclass: The editor contains unresolvable JSON syntax errors.";
+        }
+      }
+      const pyCode = jsonToPython(targetObj);
+      return `### Python Dataclass Models\n\n${repairNotice}Here are the complete Python dataclass structures representing your JSON layout:\n\n\`\`\`python\n${pyCode}\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
+    }
+
+    // Java POJO
+    if (normalizedPrompt.includes("java")) {
+      let targetObj = parsedJson;
+      let repairNotice = "";
+      if (!targetObj) {
+        try {
+          const repaired = fixInvalidJson(content);
+          targetObj = JSON.parse(repaired);
+          repairNotice = `> ⚠️ **Notice**: Syntax error detected (\`${error || "Invalid JSON"}\`). Definitions below were generated from auto-repaired JSON.\n\n`;
+        } catch {
+          return "Unable to generate Java class: The editor contains unresolvable JSON syntax errors.";
+        }
+      }
+      const javaCode = jsonToJava(targetObj);
+      return `### Java POJO Classes\n\n${repairNotice}Here are the recursively generated Java models representing your JSON data:\n\n\`\`\`java\n${javaCode}\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
+    }
+
+    // C# Model
+    if (normalizedPrompt.includes("c#") || normalizedPrompt.includes("csharp")) {
+      let targetObj = parsedJson;
+      let repairNotice = "";
+      if (!targetObj) {
+        try {
+          const repaired = fixInvalidJson(content);
+          targetObj = JSON.parse(repaired);
+          repairNotice = `> ⚠️ **Notice**: Syntax error detected (\`${error || "Invalid JSON"}\`). Definitions below were generated from auto-repaired JSON.\n\n`;
+        } catch {
+          return "Unable to generate C# model: The editor contains unresolvable JSON syntax errors.";
+        }
+      }
+      const csCode = jsonToCSharp(targetObj);
+      return `### C# Model Structures\n\n${repairNotice}Here are the recursively complete C# classes representing your JSON:\n\n\`\`\`csharp\n${csCode}\`\`\`\n\n*Click the **Insert** button on the code block header to apply it to your editor workspace.*`;
     }
 
     // Explain JSON (Deep analysis)

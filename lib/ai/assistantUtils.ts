@@ -9,14 +9,14 @@ export function detectJsonAction(prompt: string): JsonAction {
 
   if (/(schema|draft|json schema)/.test(normalized)) return 'schema';
   if (/(mock|sample data|generate mock)/.test(normalized)) return 'mock';
-  if (/(flatten|flattened)/.test(normalized)) return 'flatten';
   if (/(unflatten|expand)/.test(normalized)) return 'unflatten';
+  if (/(flatten|flattened)/.test(normalized)) return 'flatten';
   if (/(compare|diff)/.test(normalized)) return 'compare';
   if (/(merge)/.test(normalized)) return 'merge';
   if (/(minify|compact)/.test(normalized)) return 'minify';
   if (/(beautify|pretty|format|clean)/.test(normalized)) return 'beautify';
-  if (/(fix|repair|syntax)/.test(normalized)) return 'fix';
-  if (/(validate|check)/.test(normalized)) return 'validate';
+  if (/(fix|repair|resolve|correct)/.test(normalized)) return 'fix';
+  if (/(validate|check|syntax issues|syntax check|report syntax|structural issues)/.test(normalized)) return 'validate';
   if (/(explain|summarize)/.test(normalized)) return 'explain';
   return 'unknown';
 }
