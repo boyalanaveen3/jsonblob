@@ -22,12 +22,14 @@ import {
   Edit2,
   Menu,
   Sparkles,
+  Code,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { JsonTreeView } from "@/components/editor/JsonTreeView";
 import { useAiStore } from "@/lib/store/aiStore";
 import { AiAssistantPanel } from "@/components/editor/AiAssistantPanel";
+import { ApiClientGeneratorModal } from "@/components/editor/ApiClientGeneratorModal";
 import dynamic from "next/dynamic";
 
 const MonacoEditor = dynamic(() => import("@/components/editor/MonacoEditor"), {
@@ -116,6 +118,7 @@ export default function BlobDashboard({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeEditorTab, setActiveEditorTab] = useState<"editor" | "viewer">("editor");
   const { isOpen: isAiOpen, setIsOpen: setAiOpen } = useAiStore();
+  const [isApiClientModalOpen, setApiClientModalOpen] = useState(false);
 
   // Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -912,6 +915,16 @@ export default function BlobDashboard({
               <Download className="w-3.5 h-3.5" />
             </button>
 
+            {/* Generate API Client */}
+            <button
+              onClick={() => setApiClientModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border border-indigo-500/25 hover:border-indigo-500/40 bg-indigo-600/5 hover:bg-indigo-600/10 text-indigo-500 rounded-md transition-all cursor-pointer"
+              title="Generate API Client SDK"
+            >
+              <Code className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Generate API Client</span>
+            </button>
+
             {/* AI Assistant Toggle */}
             <button
               onClick={() => setAiOpen(!isAiOpen)}
@@ -1021,6 +1034,7 @@ export default function BlobDashboard({
             module="json"
             content={content}
             error={validationError || undefined}
+            activeFileName={title || "document.json"}
             onInsertCode={(code) => setContent(code)}
           />
         </div>
@@ -1073,6 +1087,14 @@ export default function BlobDashboard({
           </div>
         </div>
       )}
+
+      {/* ================= AI API SDK CLIENT GENERATOR MODAL ================= */}
+      <ApiClientGeneratorModal
+        isOpen={isApiClientModalOpen}
+        onClose={() => setApiClientModalOpen(false)}
+        editorContent={content}
+        isDark={isDark}
+      />
 
       {/* ================= TOAST NOTIFICATION CONTAINER ================= */}
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
