@@ -31,6 +31,7 @@ export interface SavedQuery {
 
 export interface ApiRequestItem {
   id: string;
+  name?: string;
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   url: string;
   headers: Array<{ key: string; value: string; enabled: boolean }>;
@@ -58,6 +59,7 @@ export interface ApiHistoryItem extends ApiRequestItem {
 export interface ApiCollection {
   id: string;
   name: string;
+  description?: string;
   requests: ApiRequestItem[];
 }
 
@@ -127,9 +129,14 @@ interface WorkspaceState {
   updateActiveApiRequest: (updates: Partial<ApiRequestItem>) => void;
   addApiHistory: (item: Omit<ApiHistoryItem, "id" | "executedAt">) => void;
   clearApiHistory: () => void;
-  addApiCollection: (name: string) => void;
+  addApiCollection: (name: string, description?: string) => string;
+  renameApiCollection: (id: string, name: string) => void;
   deleteApiCollection: (id: string) => void;
-  saveRequestToCollection: (collectionId: string, request: Omit<ApiRequestItem, "id"> & { title: string }) => void;
+  saveRequestToCollection: (collectionId: string, request: Omit<ApiRequestItem, "id"> & { title?: string; name?: string }) => void;
+  addRequestToCollection: (collectionId: string, request?: Partial<ApiRequestItem>) => void;
+  deleteRequestFromCollection: (collectionId: string, requestId: string) => void;
+  updateRequestInCollection: (collectionId: string, requestId: string, updates: Partial<ApiRequestItem>) => void;
+  importApiCollections: (newCollections: ApiCollection[]) => void;
   addEnvVariable: (variable: Omit<EnvVariable, "id">) => void;
   updateEnvVariable: (id: string, updates: Partial<EnvVariable>) => void;
   deleteEnvVariable: (id: string) => void;
@@ -269,14 +276,25 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         set({ apiHistory: [newItem, ...apiHistory].slice(0, 50) }); // Limit to 50
       },
       clearApiHistory: () => set({ apiHistory: [] }),
-      addApiCollection: (name) => {
+      addApiCollection: (name, description) => {
         const { apiCollections } = get();
+        const newColId = crypto.randomUUID();
         const newCol: ApiCollection = {
-          id: crypto.randomUUID(),
-          name,
+          id: newColId,
+          name: name.trim(),
+          description: description?.trim(),
           requests: [],
         };
         set({ apiCollections: [newCol, ...apiCollections] });
+        return newColId;
+      },
+      renameApiCollection: (id, name) => {
+        const { apiCollections } = get();
+        set({
+          apiCollections: apiCollections.map((c) =>
+            c.id === id ? { ...c, name: name.trim() } : c
+          ),
+        });
       },
       deleteApiCollection: (id) => {
         const { apiCollections } = get();
@@ -290,12 +308,65 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               const newReq: ApiRequestItem = {
                 ...request,
                 id: crypto.randomUUID(),
+                name: request.name || request.title || `${request.method} ${request.url}`,
               };
               return { ...c, requests: [...c.requests, newReq] };
             }
             return c;
           }),
         });
+      },
+      addRequestToCollection: (collectionId, request) => {
+        const { apiCollections } = get();
+        const newReq: ApiRequestItem = {
+          id: crypto.randomUUID(),
+          name: request?.name || "New Request",
+          method: request?.method || "GET",
+          url: request?.url || "https://api.github.com/users/google",
+          headers: request?.headers || [{ key: "Accept", value: "application/json", enabled: true }],
+          auth: request?.auth || { type: "none" },
+          bodyType: request?.bodyType || "none",
+          body: request?.body || "{\n  \n}",
+          formData: request?.formData || [],
+        };
+        set({
+          apiCollections: apiCollections.map((c) => {
+            if (c.id === collectionId) {
+              return { ...c, requests: [...c.requests, newReq] };
+            }
+            return c;
+          }),
+        });
+      },
+      deleteRequestFromCollection: (collectionId, requestId) => {
+        const { apiCollections } = get();
+        set({
+          apiCollections: apiCollections.map((c) => {
+            if (c.id === collectionId) {
+              return { ...c, requests: c.requests.filter((r) => r.id !== requestId) };
+            }
+            return c;
+          }),
+        });
+      },
+      updateRequestInCollection: (collectionId, requestId, updates) => {
+        const { apiCollections } = get();
+        set({
+          apiCollections: apiCollections.map((c) => {
+            if (c.id === collectionId) {
+              return {
+                ...c,
+                requests: c.requests.map((r) => (r.id === requestId ? { ...r, ...updates } : r)),
+              };
+            }
+            return c;
+          }),
+        });
+      },
+      importApiCollections: (newCollections) => {
+        const { apiCollections } = get();
+        // Merge or append imported collections
+        set({ apiCollections: [...newCollections, ...apiCollections] });
       },
       addEnvVariable: (variable) => {
         const { envVariables } = get();

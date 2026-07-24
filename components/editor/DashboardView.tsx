@@ -38,13 +38,16 @@ export function DashboardView({ blobs, onSelectBlob, onDeleteBlob, onCreateNewBl
     setActiveView 
   } = useWorkspaceStore();
   
-  const { setIsOpen: setAiOpen } = useAiStore();
+  const { setIsOpen: setAiOpen, messages: aiMessages } = useAiStore();
 
   // Metrics calculations
   const totalBlobs = blobs.length;
   const totalCollections = collections.length;
   const totalSqlQueries = sqlHistory.length;
   const totalApiRequests = apiHistory.length;
+  const totalAiAudits = useMemo(() => {
+    return aiMessages.filter((m) => m.role === "assistant").length;
+  }, [aiMessages]);
   
   const totalStorageKb = useMemo(() => {
     let bytes = 0;
@@ -64,12 +67,65 @@ export function DashboardView({ blobs, onSelectBlob, onDeleteBlob, onCreateNewBl
       .slice(0, 5);
   }, [blobs]);
 
+  // Real dynamic chart data derived from activities & execution history
+  const chartData = useMemo(() => {
+    const days: Array<{ label: string; count: number; dateStr: string }> = [];
+    const now = new Date();
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split("T")[0];
+      const label = d.toLocaleDateString("en-US", { weekday: "short" });
+      days.push({ label, count: 0, dateStr });
+    }
+
+    // Accumulate actual activity logs
+    activities.forEach((act) => {
+      if (!act.timestamp) return;
+      const actDate = act.timestamp.split("T")[0];
+      const found = days.find((d) => d.dateStr === actDate);
+      if (found) found.count += 1;
+    });
+
+    // Accumulate API call history
+    apiHistory.forEach((item) => {
+      if (!item.executedAt) return;
+      const itemDate = item.executedAt.split("T")[0];
+      const found = days.find((d) => d.dateStr === itemDate);
+      if (found) found.count += 1;
+    });
+
+    // Accumulate SQL query history
+    sqlHistory.forEach((item) => {
+      if (!item.executedAt) return;
+      const itemDate = item.executedAt.split("T")[0];
+      const found = days.find((d) => d.dateStr === itemDate);
+      if (found) found.count += 1;
+    });
+
+    const maxCount = Math.max(...days.map((d) => d.count), 4);
+
+    const points = days.map((d, i) => {
+      const x = Math.round(20 + i * (460 / 6));
+      const y = Math.round(130 - (d.count / maxCount) * 95);
+      return { x, y, count: d.count, label: d.label };
+    });
+
+    const pathD = points.reduce((acc, p, idx) => {
+      return idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
+    }, "");
+
+    const areaD = `${pathD} L ${points[points.length - 1].x} 140 L ${points[0].x} 140 Z`;
+    const totalRecentActions = days.reduce((sum, d) => sum + d.count, 0);
+
+    return { days, points, pathD, areaD, totalRecentActions };
+  }, [activities, apiHistory, sqlHistory]);
+
   // Handle Quick Actions
   const handleOpenSql = () => setActiveView("sql");
   const handleOpenApi = () => setActiveView("api");
-  const handleAskAi = () => {
-    setAiOpen(true);
-  };
+  const handleAskAi = () => setAiOpen(true);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 bg-background text-foreground">
@@ -136,14 +192,14 @@ export function DashboardView({ blobs, onSelectBlob, onDeleteBlob, onCreateNewBl
           </div>
         </div>
 
-        {/* AI Requests (simulated) */}
+        {/* AI Requests */}
         <div className="bg-card border border-border p-4 rounded-xl shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-muted-foreground uppercase">AI Audits</span>
             <Sparkles className="w-5 h-5 text-amber-500 animate-pulse" />
           </div>
           <div className="mt-4">
-            <span className="text-2xl md:text-3xl font-extrabold tracking-tight">16</span>
+            <span className="text-2xl md:text-3xl font-extrabold tracking-tight">{totalAiAudits}</span>
             <span className="text-[10px] text-muted-foreground block mt-0.5">AI assistant calls</span>
           </div>
         </div>
@@ -163,19 +219,19 @@ export function DashboardView({ blobs, onSelectBlob, onDeleteBlob, onCreateNewBl
 
       {/* Main Grid: Charts & Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* SVG Analytics Chart Widget */}
+        {/* SVG Dynamic Analytics Chart Widget */}
         <div className="lg:col-span-2 bg-card border border-border rounded-xl p-5 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <h3 className="font-bold text-sm">Activity Analytics</h3>
-              <p className="text-xs text-muted-foreground">Workspace interactions and executions</p>
+              <p className="text-xs text-muted-foreground">Workspace interactions and execution trends</p>
             </div>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-              Live updates
+              {chartData.totalRecentActions > 0 ? `${chartData.totalRecentActions} action(s) logged` : "Live updates"}
             </span>
           </div>
 
-          {/* SVG Custom Graph */}
+          {/* SVG Dynamic Graph */}
           <div className="h-44 w-full relative pt-2">
             <svg viewBox="0 0 500 150" className="w-full h-full text-primary" preserveAspectRatio="none">
               <defs>
@@ -189,36 +245,31 @@ export function DashboardView({ blobs, onSelectBlob, onDeleteBlob, onCreateNewBl
               <line x1="0" y1="75" x2="500" y2="75" stroke="var(--color-border, #e5e7eb)" strokeWidth="0.5" strokeDasharray="3" />
               <line x1="0" y1="120" x2="500" y2="120" stroke="var(--color-border, #e5e7eb)" strokeWidth="0.5" strokeDasharray="3" />
 
-              {/* Area path */}
+              {/* Dynamic Area path */}
+              <path d={chartData.areaD} fill="url(#chartGrad)" />
+              {/* Dynamic Stroke path */}
               <path
-                d="M0 150 L 0 110 L 70 85 L 140 120 L 210 50 L 280 80 L 350 40 L 420 65 L 500 25 L 500 150 Z"
-                fill="url(#chartGrad)"
-              />
-              {/* Stroke path */}
-              <path
-                d="M0 110 L 70 85 L 140 120 L 210 50 L 280 80 L 350 40 L 420 65 L 500 25"
+                d={chartData.pathD}
                 fill="none"
                 stroke="rgb(124, 58, 237)"
                 strokeWidth="2.5"
                 strokeLinecap="round"
               />
 
-              {/* Nodes */}
-              <circle cx="70" cy="85" r="4" fill="white" stroke="rgb(124, 58, 237)" strokeWidth="2" />
-              <circle cx="210" cy="50" r="4" fill="white" stroke="rgb(124, 58, 237)" strokeWidth="2" />
-              <circle cx="350" cy="40" r="4" fill="white" stroke="rgb(124, 58, 237)" strokeWidth="2" />
-              <circle cx="500" cy="25" r="4" fill="white" stroke="rgb(124, 58, 237)" strokeWidth="2" />
+              {/* Dynamic Data Nodes */}
+              {chartData.points.map((p, idx) => (
+                <g key={idx} className="group cursor-pointer">
+                  <circle cx={p.x} cy={p.y} r="4" fill="white" stroke="rgb(124, 58, 237)" strokeWidth="2" />
+                  <title>{`${p.label}: ${p.count} action(s)`}</title>
+                </g>
+              ))}
             </svg>
-            
-            {/* Chart X axis labels */}
-            <div className="flex justify-between text-[9px] text-muted-foreground mt-2 px-1">
-              <span>Mon</span>
-              <span>Tue</span>
-              <span>Wed</span>
-              <span>Thu</span>
-              <span>Fri</span>
-              <span>Sat</span>
-              <span>Sun</span>
+
+            {/* Dynamic Chart X axis labels */}
+            <div className="flex justify-between text-[9px] font-semibold text-muted-foreground mt-2 px-3">
+              {chartData.days.map((d, i) => (
+                <span key={i}>{d.label}</span>
+              ))}
             </div>
           </div>
         </div>

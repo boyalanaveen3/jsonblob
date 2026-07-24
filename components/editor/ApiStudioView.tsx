@@ -1,24 +1,44 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useWorkspaceStore, type ApiRequestItem, type ApiHistoryItem } from "@/lib/store/workspaceStore";
-import { 
-  Send, 
-  Plus, 
-  Trash2, 
-  Copy, 
-  History, 
-  FolderPlus, 
-  Terminal, 
-  Sliders, 
-  Globe, 
-  Clock, 
-  Layers, 
-  Check, 
+import React, { useState, useEffect, useMemo } from "react";
+import {
+  useWorkspaceStore,
+  type ApiRequestItem,
+  type ApiHistoryItem,
+  type ApiCollection,
+} from "@/lib/store/workspaceStore";
+import {
+  parsePostmanCollection,
+  parseOpenApiSpec,
+  exportAsPostmanCollection,
+} from "@/lib/utils/apiImportExport";
+import {
+  Send,
+  Plus,
+  Trash2,
+  Copy,
+  History,
+  FolderPlus,
+  Globe,
+  Clock,
+  Layers,
+  Check,
   AlertCircle,
   Download,
-  Info,
-  Code
+  Upload,
+  Code,
+  Sliders,
+  FileJson,
+  Edit3,
+  Search,
+  ChevronRight,
+  ChevronDown,
+  X,
+  FileCode,
+  Folder,
+  FolderOpen,
+  Share2,
+  FileText,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -47,14 +67,24 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
     addApiHistory,
     clearApiHistory,
     addApiCollection,
+    renameApiCollection,
     deleteApiCollection,
     saveRequestToCollection,
+    addRequestToCollection,
+    deleteRequestFromCollection,
+    updateRequestInCollection,
+    importApiCollections,
     addEnvVariable,
     updateEnvVariable,
     deleteEnvVariable,
     addActivity,
   } = useWorkspaceStore();
 
+  // Sidebar Tab Switcher: collections | history | environments
+  const [sidebarTab, setSidebarTab] = useState<"collections" | "history" | "environments">("collections");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Request & Response UI tabs
   const [activeReqTab, setActiveReqTab] = useState<"params" | "headers" | "auth" | "body">("params");
   const [activeResTab, setActiveResTab] = useState<"pretty" | "raw" | "headers">("pretty");
   const [isLoading, setIsLoading] = useState(false);
@@ -67,34 +97,130 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
   } | null>(null);
   const [errorInfo, setErrorInfo] = useState<string | null>(null);
 
-  // Curl Modal & Collections Modal states
-  const [showCurlImportModal, setShowCurlImportModal] = useState(false);
-  const [curlString, setCurlString] = useState("");
+  // Modals state
+  const [showCreateColModal, setShowCreateColModal] = useState(false);
+  const [newColNameInput, setNewColNameInput] = useState("");
+  const [newColDescInput, setNewColDescInput] = useState("");
+
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importTab, setImportTab] = useState<"file" | "postman" | "openapi" | "curl">("postman");
+  const [importRawText, setImportRawText] = useState("");
+  const [importFileName, setImportFileName] = useState<string | null>(null);
+
   const [showSaveColModal, setShowSaveColModal] = useState(false);
   const [selectedColId, setSelectedColId] = useState("");
-  const [newColName, setNewColName] = useState("");
+  const [newSaveColName, setNewSaveColName] = useState("");
   const [reqSaveTitle, setReqSaveTitle] = useState("");
 
-  // Environment variables modal
   const [showEnvModal, setShowEnvModal] = useState(false);
   const [newEnvKey, setNewEnvKey] = useState("");
   const [newEnvValue, setNewEnvValue] = useState("");
 
-  // Helpers for building Key-Value items
-  const handleAddParam = () => {
-    // Append a query param to URL
-    const urlObj = parseUrl(activeApiRequest.url);
-    urlObj.searchParams.append("key", "value");
-    updateActiveApiRequest({ url: urlObj.toString() });
+  // Collapsed state for collections folders in sidebar
+  const [collapsedCols, setCollapsedCols] = useState<Record<string, boolean>>({});
+
+  // Query Parameters table state parsed from activeApiRequest.url
+  const queryParams = useMemo(() => {
+    try {
+      const urlObj = new URL(
+        activeApiRequest.url.startsWith("http") ? activeApiRequest.url : `http://localhost${activeApiRequest.url.startsWith("/") ? "" : "/"}${activeApiRequest.url}`
+      );
+      const params: Array<{ key: string; value: string; enabled: boolean }> = [];
+      urlObj.searchParams.forEach((val, key) => {
+        params.push({ key, value: val, enabled: true });
+      });
+      return params;
+    } catch {
+      return [];
+    }
+  }, [activeApiRequest.url]);
+
+  const toggleColCollapse = (colId: string) => {
+    setCollapsedCols((prev) => ({ ...prev, [colId]: !prev[colId] }));
   };
 
+  // Environment variables replacement
+  const replaceEnvVars = (str: string): string => {
+    let replaced = str;
+    envVariables.forEach((variable) => {
+      if (variable.enabled && variable.key) {
+        replaced = replaced.replaceAll(`{{${variable.key}}}`, variable.value);
+      }
+    });
+    return replaced;
+  };
+
+  // URL & Query Params sync helpers
+  const handleUpdateQueryParam = (index: number, key: string, val: string) => {
+    try {
+      const isFull = activeApiRequest.url.startsWith("http");
+      const base = isFull ? activeApiRequest.url : `http://localhost${activeApiRequest.url.startsWith("/") ? "" : "/"}${activeApiRequest.url}`;
+      const urlObj = new URL(base);
+
+      // Rebuild params
+      const currentParams: Array<[string, string]> = [];
+      urlObj.searchParams.forEach((v, k) => currentParams.push([k, v]));
+
+      if (index < currentParams.length) {
+        currentParams[index] = [key, val];
+      } else {
+        currentParams.push([key, val]);
+      }
+
+      // Clear & set
+      const newSearch = new URLSearchParams();
+      currentParams.forEach(([k, v]) => {
+        if (k) newSearch.append(k, v);
+      });
+
+      const newUrl = isFull
+        ? `${urlObj.origin}${urlObj.pathname}${newSearch.toString() ? `?${newSearch.toString()}` : ""}`
+        : `${activeApiRequest.url.split("?")[0]}${newSearch.toString() ? `?${newSearch.toString()}` : ""}`;
+
+      updateActiveApiRequest({ url: newUrl });
+    } catch {
+      // Fallback append
+      updateActiveApiRequest({ url: `${activeApiRequest.url}?${key}=${val}` });
+    }
+  };
+
+  const handleAddQueryParam = () => {
+    const hasQuery = activeApiRequest.url.includes("?");
+    const newUrl = activeApiRequest.url + (hasQuery ? "&key=value" : "?key=value");
+    updateActiveApiRequest({ url: newUrl });
+  };
+
+  const handleRemoveQueryParam = (index: number) => {
+    try {
+      const isFull = activeApiRequest.url.startsWith("http");
+      const base = isFull ? activeApiRequest.url : `http://localhost${activeApiRequest.url.startsWith("/") ? "" : "/"}${activeApiRequest.url}`;
+      const urlObj = new URL(base);
+
+      const currentParams: Array<[string, string]> = [];
+      urlObj.searchParams.forEach((v, k) => currentParams.push([k, v]));
+
+      const filtered = currentParams.filter((_, i) => i !== index);
+      const newSearch = new URLSearchParams();
+      filtered.forEach(([k, v]) => newSearch.append(k, v));
+
+      const newUrl = isFull
+        ? `${urlObj.origin}${urlObj.pathname}${newSearch.toString() ? `?${newSearch.toString()}` : ""}`
+        : `${activeApiRequest.url.split("?")[0]}${newSearch.toString() ? `?${newSearch.toString()}` : ""}`;
+
+      updateActiveApiRequest({ url: newUrl });
+    } catch {
+      // ignore
+    }
+  };
+
+  // Header table handlers
   const handleAddHeader = () => {
     const headers = [...activeApiRequest.headers, { key: "", value: "", enabled: true }];
     updateActiveApiRequest({ headers });
   };
 
-  const handleUpdateHeader = (index: number, updates: Partial<typeof activeApiRequest.headers[0]>) => {
-    const headers = activeApiRequest.headers.map((h, i) => i === index ? { ...h, ...updates } : h);
+  const handleUpdateHeader = (index: number, updates: Partial<ApiRequestItem["headers"][0]>) => {
+    const headers = activeApiRequest.headers.map((h, i) => (i === index ? { ...h, ...updates } : h));
     updateActiveApiRequest({ headers });
   };
 
@@ -103,13 +229,25 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
     updateActiveApiRequest({ headers });
   };
 
+  const handleAddCommonHeader = (key: string, value: string) => {
+    const existingIdx = activeApiRequest.headers.findIndex((h) => h.key.toLowerCase() === key.toLowerCase());
+    if (existingIdx >= 0) {
+      handleUpdateHeader(existingIdx, { value, enabled: true });
+    } else {
+      updateActiveApiRequest({
+        headers: [...activeApiRequest.headers, { key, value, enabled: true }],
+      });
+    }
+  };
+
+  // Form Data handlers
   const handleAddFormData = () => {
     const formData = [...activeApiRequest.formData, { key: "", value: "", enabled: true }];
     updateActiveApiRequest({ formData });
   };
 
-  const handleUpdateFormData = (index: number, updates: Partial<typeof activeApiRequest.formData[0]>) => {
-    const formData = activeApiRequest.formData.map((f, i) => i === index ? { ...f, ...updates } : f);
+  const handleUpdateFormData = (index: number, updates: Partial<ApiRequestItem["formData"][0]>) => {
+    const formData = activeApiRequest.formData.map((f, i) => (i === index ? { ...f, ...updates } : f));
     updateActiveApiRequest({ formData });
   };
 
@@ -118,26 +256,120 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
     updateActiveApiRequest({ formData });
   };
 
-  // URL Parsing helper
-  const parseUrl = (urlStr: string): URL => {
-    try {
-      return new URL(urlStr);
-    } catch {
-      // Fallback relative or invalid
-      if (urlStr.startsWith("http")) return new URL("https://api.github.com");
-      return new URL("http://localhost:3000" + (urlStr.startsWith("/") ? "" : "/") + urlStr);
+  // Create Collection Handler
+  const handleCreateCollectionSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newColNameInput.trim()) return;
+    const newId = addApiCollection(newColNameInput, newColDescInput);
+    addActivity("api_send", `Created Collection: ${newColNameInput}`);
+    setNewColNameInput("");
+    setNewColDescInput("");
+    setShowCreateColModal(false);
+  };
+
+  // Import Action Handler
+  const handleImportSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!importRawText.trim()) return;
+
+    let imported: ApiCollection[] = [];
+
+    if (importTab === "postman" || importTab === "file") {
+      imported = parsePostmanCollection(importRawText);
+      if (imported.length === 0) {
+        // Fallback try OpenAPI
+        imported = parseOpenApiSpec(importRawText);
+      }
+    } else if (importTab === "openapi") {
+      imported = parseOpenApiSpec(importRawText);
+    } else if (importTab === "curl") {
+      // Parse single curl command into a request inside a collection
+      const curlString = importRawText;
+      const methodMatch = curlString.match(/-X\s+([A-Z]+)/i) || curlString.match(/--request\s+([A-Z]+)/i);
+      const method = methodMatch ? (methodMatch[1].toUpperCase() as any) : "GET";
+      const urlMatch =
+        curlString.match(/"(https?:\/\/[^"]+)"/) ||
+        curlString.match(/'(https?:\/\/[^']+)'/) ||
+        curlString.match(/(https?:\/\/\S+)/);
+      const url = urlMatch ? urlMatch[1] : "https://api.github.com";
+
+      const headers: ApiRequestItem["headers"] = [];
+      const headerRegex = /(?:-H|--header)\s+["']([^"']+)["']/g;
+      let match;
+      while ((match = headerRegex.exec(curlString)) !== null) {
+        const parts = match[1].split(":");
+        if (parts.length >= 2) {
+          headers.push({
+            key: parts[0].trim(),
+            value: parts.slice(1).join(":").trim(),
+            enabled: true,
+          });
+        }
+      }
+
+      const bodyMatch = curlString.match(/(?:-d|--data|--data-raw)\s+['"]([\s\S]+?)['"]/);
+      const body = bodyMatch ? bodyMatch[1] : "";
+
+      imported = [
+        {
+          id: crypto.randomUUID(),
+          name: "cURL Import",
+          description: "Imported from cURL command",
+          requests: [
+            {
+              id: crypto.randomUUID(),
+              name: `${method} ${url}`,
+              method,
+              url,
+              headers,
+              auth: { type: "none" },
+              bodyType: body ? "json" : "none",
+              body: body || "{\n  \n}",
+              formData: [],
+            },
+          ],
+        },
+      ];
+    }
+
+    if (imported.length > 0) {
+      importApiCollections(imported);
+      addActivity("api_send", `Imported ${imported.length} collection(s) (${imported[0].name})`);
+      setImportRawText("");
+      setImportFileName(null);
+      setShowImportModal(false);
+    } else {
+      alert("Could not parse the provided import data. Please verify the JSON schema or format.");
     }
   };
 
-  // Replace environment variables in a string e.g. {{base_url}}/users
-  const replaceEnvVars = (str: string): string => {
-    let replaced = str;
-    envVariables.forEach((variable) => {
-      if (variable.enabled) {
-        replaced = replaced.replaceAll(`{{${variable.key}}}`, variable.value);
+  // Handle File upload input for Import
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const content = evt.target?.result as string;
+      if (content) {
+        setImportRawText(content);
       }
-    });
-    return replaced;
+    };
+    reader.readAsText(file);
+  };
+
+  // Export Collection Handler
+  const handleExportCollection = (col: ApiCollection) => {
+    const jsonOutput = exportAsPostmanCollection(col);
+    const blob = new Blob([jsonOutput], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${col.name.replace(/\s+/g, "_")}.postman_collection.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // Send request execution
@@ -202,17 +434,25 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
       const timeMs = Math.round(end - start);
       const sizeBytes = new Blob([text]).size;
 
-      // Extract response headers
       const resHeaders: Record<string, string> = {};
       res.headers.forEach((v, k) => {
         resHeaders[k] = v;
       });
 
+      // Automatically pretty-print JSON response if valid JSON string
+      let formattedText = text;
+      try {
+        const parsed = JSON.parse(text);
+        formattedText = JSON.stringify(parsed, null, 2);
+      } catch {
+        // Keep raw text if not valid JSON
+      }
+
       setResponse({
         status: res.status,
         timeMs,
         sizeBytes,
-        body: text,
+        body: formattedText,
         headers: resHeaders,
       });
 
@@ -220,38 +460,39 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
         ...activeApiRequest,
         statusCode: res.status,
         duration: timeMs,
-        responseBody: text,
+        responseBody: formattedText,
         responseHeaders: resHeaders,
       });
-      addActivity("api_send", `Dispatched API ${method} to ${parseUrl(finalUrl).hostname}`);
+      addActivity("api_send", `Dispatched ${method} to ${finalUrl.slice(0, 40)}`);
     } catch (err: any) {
       const end = performance.now();
       const timeMs = Math.round(end - start);
-
-      // CORS fallback emulation
-      console.warn("Client side fetch error, applying mock fallback for user convenience:", err);
       const isCors = err.message?.includes("Failed to fetch") || err.message?.includes("CORS");
-      
-      const fallbackBody = JSON.stringify({
-        error: "Network / CORS block",
-        message: err.message || "Failed to fetch response.",
-        hint: isCors 
-          ? "This is likely a browser Cross-Origin Resource Sharing (CORS) restriction. The server at the target URL did not return Access-Control-Allow-Origin headers. Try calling a public API like https://api.github.com or https://httpbin.org/get."
-          : "Verify the URL protocol and spelling.",
-        echo: {
-          url: finalUrl,
-          method,
-          headers: headersInit
-        }
-      }, null, 2);
 
-      setErrorInfo(isCors ? "CORS Policy Blocked" : "Connection Failure");
+      const fallbackBody = JSON.stringify(
+        {
+          error: isCors ? "CORS Policy Restriction" : "Network Connection Error",
+          message: err.message || "Failed to execute fetch request.",
+          suggestion: isCors
+            ? "Browsers block cross-origin requests without Access-Control-Allow-Origin headers. Try testing endpoint CORS policies or testing public APIs like https://api.github.com/users/google."
+            : "Check endpoint server state and URL spelling.",
+          echo: {
+            url: finalUrl,
+            method,
+            headers: headersInit,
+          },
+        },
+        null,
+        2
+      );
+
+      setErrorInfo(isCors ? "CORS Policy Block" : "Network Error");
       setResponse({
         status: isCors ? 0 : 503,
         timeMs,
         sizeBytes: fallbackBody.length,
         body: fallbackBody,
-        headers: { "content-type": "application/json; charset=utf-8", "x-powered-by": "JSONBlob Sandbox" },
+        headers: { "content-type": "application/json" },
       });
 
       addApiHistory({
@@ -261,7 +502,7 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
         responseBody: fallbackBody,
         responseHeaders: { "content-type": "application/json" },
       });
-      addActivity("api_send", `Failed API ${method} to ${finalUrl}`);
+      addActivity("api_send", `Failed API ${method} request to ${finalUrl.slice(0, 30)}`);
     } finally {
       setIsLoading(false);
     }
@@ -290,58 +531,33 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
     return cmd;
   };
 
-  // cURL Import parser
-  const handleCurlImport = () => {
-    if (!curlString.trim()) return;
-
-    try {
-      // Simple parse of curl
-      const methodMatch = curlString.match(/-X\s+([A-Z]+)/i) || curlString.match(/--request\s+([A-Z]+)/i);
-      const method = methodMatch ? (methodMatch[1].toUpperCase() as any) : "GET";
-
-      const urlMatch = curlString.match(/"(https?:\/\/[^"]+)"/) || curlString.match(/'(https?:\/\/[^']+)'/) || curlString.match(/(https?:\/\/\S+)/);
-      const url = urlMatch ? urlMatch[1] : "https://api.github.com";
-
-      // Headers
-      const headers: typeof activeApiRequest.headers = [];
-      const headerRegex = /(?:-H|--header)\s+["']([^"']+)["']/g;
-      let match;
-      while ((match = headerRegex.exec(curlString)) !== null) {
-        const parts = match[1].split(":");
-        if (parts.length >= 2) {
-          headers.push({
-            key: parts[0].trim(),
-            value: parts.slice(1).join(":").trim(),
-            enabled: true,
-          });
-        }
-      }
-
-      // Body
-      const bodyMatch = curlString.match(/(?:-d|--data|--data-raw)\s+['"]([\s\S]+?)['"]/);
-      const body = bodyMatch ? bodyMatch[1] : "";
-      const bodyType = body ? "json" : "none";
-
-      setActiveApiRequest({
-        id: "current-req",
-        method,
-        url,
-        headers,
-        auth: { type: "none" },
-        bodyType,
-        body,
-        formData: [],
-      });
-
-      setCurlString("");
-      setShowCurlImportModal(false);
-      addActivity("api_send", "Imported Request from cURL command");
-    } catch (e) {
-      alert("Failed to parse cURL command. Check layout formatting.");
-    }
+  const handleCopyCurl = () => {
+    navigator.clipboard.writeText(getCurlCommand());
   };
 
-  // Save Response Body directly as JSON Blob in SaaS
+  // Save Request to collection submit
+  const handleSaveToColSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    let colId = selectedColId;
+
+    if (colId === "new" && newSaveColName.trim()) {
+      colId = addApiCollection(newSaveColName);
+    }
+
+    if (!colId) return;
+
+    saveRequestToCollection(colId, {
+      ...activeApiRequest,
+      name: reqSaveTitle.trim() || activeApiRequest.name || `${activeApiRequest.method} ${activeApiRequest.url}`,
+    });
+
+    setNewSaveColName("");
+    setReqSaveTitle("");
+    setShowSaveColModal(false);
+    addActivity("api_send", `Saved Request to Collection`);
+  };
+
+  // Save Response Body as JSON Blob SaaS
   const handleSaveResponseAsBlob = () => {
     if (!response || !response.body) return;
     try {
@@ -349,301 +565,584 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
       const formatted = JSON.stringify(parsed, null, 2);
       onSaveAsBlob(`API Response [${activeApiRequest.method}]`, formatted);
     } catch {
-      // Plain text fallback
       onSaveAsBlob(`API Response [${activeApiRequest.method}]`, response.body);
     }
   };
 
-  const handleCopyCurl = () => {
-    navigator.clipboard.writeText(getCurlCommand());
-  };
-
-  const handleSaveToColSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    let colId = selectedColId;
-
-    if (colId === "new" && newColName.trim()) {
-      addApiCollection(newColName);
-      // Wait for next tick to lookup the new col ID or create it inline
-      const newColId = crypto.randomUUID();
-      colId = newColId;
+  // Prettify JSON Body
+  const handlePrettifyBody = () => {
+    try {
+      const parsed = JSON.parse(activeApiRequest.body);
+      updateActiveApiRequest({ body: JSON.stringify(parsed, null, 2) });
+    } catch (e: any) {
+      alert(`Invalid JSON format: ${e.message}`);
     }
-
-    if (!colId || !reqSaveTitle.trim()) return;
-
-    saveRequestToCollection(colId, {
-      ...activeApiRequest,
-      title: reqSaveTitle,
-    });
-
-    setNewColName("");
-    setReqSaveTitle("");
-    setShowSaveColModal(false);
   };
 
-  const handleEnvSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newEnvKey.trim()) return;
-    addEnvVariable({
-      key: newEnvKey.trim(),
-      value: newEnvValue.trim(),
-      enabled: true,
-    });
-    setNewEnvKey("");
-    setNewEnvValue("");
-  };
+  // Filter collections and requests
+  const filteredCollections = useMemo(() => {
+    if (!searchQuery.trim()) return apiCollections;
+    const q = searchQuery.toLowerCase();
+    return apiCollections
+      .map((col) => {
+        const matchesColName = col.name.toLowerCase().includes(q);
+        const matchingRequests = col.requests.filter(
+          (req) => (req.name || "").toLowerCase().includes(q) || req.url.toLowerCase().includes(q) || req.method.toLowerCase().includes(q)
+        );
+        if (matchesColName || matchingRequests.length > 0) {
+          return {
+            ...col,
+            requests: matchesColName ? col.requests : matchingRequests,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean) as ApiCollection[];
+  }, [apiCollections, searchQuery]);
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-background text-foreground h-full relative">
-      
-      {/* API Studio Sidebar */}
-      <aside className="w-64 border-r border-border bg-card/40 flex flex-col shrink-0 hidden md:flex">
-        {/* Header Actions */}
-        <div className="p-4 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-2">
+    <div className="flex-1 flex flex-col overflow-hidden bg-background text-foreground h-full relative select-none">
+      {/* ================= POSTMAN STYLE TOP TOOLBAR ================= */}
+      <header className="h-12 border-b border-border bg-card/60 px-4 flex items-center justify-between shrink-0 z-10">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-primary">
             <Globe className="w-4 h-4 text-blue-500" />
-            <span className="font-bold text-xs uppercase tracking-wider">API Explorer</span>
+            <span>API Studio</span>
           </div>
-          <div className="flex gap-1.5">
-            <button
-              onClick={() => setShowCurlImportModal(true)}
-              className="p-1 border border-border rounded hover:bg-accent text-xs font-semibold flex items-center gap-1 cursor-pointer"
-              title="Import cURL"
-            >
-              <Code className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setShowEnvModal(true)}
-              className="p-1 border border-border rounded hover:bg-accent text-xs font-semibold flex items-center gap-1 cursor-pointer"
-              title="Environments"
-            >
-              <Sliders className="w-3.5 h-3.5" />
-            </button>
-          </div>
+
+          <div className="h-4 w-px bg-border mx-1" />
+
+          {/* Quick Actions */}
+          <button
+            onClick={() => {
+              setActiveApiRequest({
+                id: crypto.randomUUID(),
+                name: "New Request",
+                method: "GET",
+                url: "https://api.github.com/users/google",
+                headers: [{ key: "Accept", value: "application/json", enabled: true }],
+                auth: { type: "none" },
+                bodyType: "none",
+                body: "{\n  \n}",
+                formData: [],
+              });
+            }}
+            className="px-2.5 py-1 bg-primary text-primary-foreground hover:opacity-95 rounded text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+            title="Create New HTTP Request"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>New Request</span>
+          </button>
+
+          <button
+            onClick={() => setShowCreateColModal(true)}
+            className="px-2.5 py-1 bg-card border border-border hover:bg-accent text-xs font-semibold rounded flex items-center gap-1.5 cursor-pointer transition-colors"
+            title="Create New Collection Folder"
+          >
+            <FolderPlus className="w-3.5 h-3.5 text-amber-500" />
+            <span>Create Collection</span>
+          </button>
+
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="px-2.5 py-1 bg-card border border-border hover:bg-accent text-xs font-semibold rounded flex items-center gap-1.5 cursor-pointer transition-colors"
+            title="Import Postman Collection, OpenAPI, or cURL"
+          >
+            <Upload className="w-3.5 h-3.5 text-indigo-500" />
+            <span>Import</span>
+          </button>
         </div>
 
-        {/* Collections list */}
-        <div className="flex-1 flex flex-col min-h-0 border-b border-border overflow-hidden">
-          <div className="px-4 py-2 bg-accent/40 border-b border-border text-[10px] font-bold text-muted-foreground uppercase flex items-center justify-between">
-            <span>Collections</span>
-            <Layers className="w-3.5 h-3.5 text-muted-foreground" />
+        <div className="flex items-center gap-2">
+          {/* Environments button */}
+          <button
+            onClick={() => setShowEnvModal(true)}
+            className="px-2.5 py-1 border border-border hover:bg-accent text-xs font-semibold rounded flex items-center gap-1.5 cursor-pointer transition-colors"
+          >
+            <Sliders className="w-3.5 h-3.5 text-emerald-500" />
+            <span>Environments ({envVariables.filter((e) => e.enabled).length})</span>
+          </button>
+        </div>
+      </header>
+
+      {/* ================= MAIN SPLIT WORKSPACE ================= */}
+      <div className="flex-1 flex overflow-hidden">
+        
+        {/* ================= LEFT SIDEBAR (Collections / History / Environments) ================= */}
+        <aside className="w-72 border-r border-border bg-card/30 flex flex-col shrink-0">
+          
+          {/* Sidebar Nav Tabs */}
+          <div className="flex border-b border-border bg-card/60 shrink-0">
+            <button
+              onClick={() => setSidebarTab("collections")}
+              className={`flex-1 py-2 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer ${
+                sidebarTab === "collections"
+                  ? "border-primary text-primary bg-primary/5"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Collections</span>
+            </button>
+
+            <button
+              onClick={() => setSidebarTab("history")}
+              className={`flex-1 py-2 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer ${
+                sidebarTab === "history"
+                  ? "border-primary text-primary bg-primary/5"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>History</span>
+            </button>
           </div>
+
+          {/* Search Filter Bar */}
+          <div className="p-2 border-b border-border bg-background/50">
+            <div className="relative flex items-center">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Filter collections & requests..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-3 py-1 bg-background border border-border rounded text-xs outline-none focus:border-primary transition-colors"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Sidebar Tab Content */}
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {apiCollections.length === 0 ? (
-              <div className="text-xs text-muted-foreground text-center py-6 px-3">
-                No collections. Click Save Request inside the query toolbar to create folders.
-              </div>
-            ) : (
-              apiCollections.map((col) => (
-                <div key={col.id} className="space-y-1">
-                  <div className="flex items-center justify-between p-1.5 font-semibold text-xs text-muted-foreground bg-accent/15 rounded">
-                    <span>{col.name}</span>
+            {sidebarTab === "collections" && (
+              <>
+                <div className="flex items-center justify-between px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase">
+                  <span>Collections ({filteredCollections.length})</span>
+                  <button
+                    onClick={() => setShowCreateColModal(true)}
+                    className="p-1 hover:text-primary rounded cursor-pointer"
+                    title="Create Collection Folder"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {filteredCollections.length === 0 ? (
+                  <div className="text-center py-8 px-3 space-y-3">
+                    <Folder className="w-8 h-8 text-muted-foreground/40 mx-auto" />
+                    <div className="text-xs text-muted-foreground">
+                      No collections match search. Click below to create a collection folder.
+                    </div>
                     <button
-                      onClick={() => deleteApiCollection(col.id)}
-                      className="p-0.5 hover:text-red-500 rounded cursor-pointer"
+                      onClick={() => setShowCreateColModal(true)}
+                      className="px-3 py-1.5 bg-primary text-primary-foreground rounded text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
                     >
-                      <Trash2 className="w-3 h-3" />
+                      <FolderPlus className="w-3.5 h-3.5" />
+                      <span>Create Collection</span>
                     </button>
                   </div>
-                  <div className="pl-3 space-y-1">
-                    {col.requests.length === 0 && (
-                      <div className="text-[10px] text-muted-foreground py-1">Empty collection</div>
-                    )}
-                    {col.requests.map((req) => (
-                      <div
-                        key={req.id}
-                        onClick={() => setActiveApiRequest(req)}
-                        className="flex items-center gap-1.5 p-1 rounded hover:bg-accent text-xs cursor-pointer truncate"
-                      >
-                        <span className={`text-[9px] font-bold px-1 rounded uppercase ${
-                          req.method === "GET" ? "text-green-600 bg-green-500/10" :
-                          req.method === "POST" ? "text-blue-600 bg-blue-500/10" : "text-amber-600 bg-amber-500/10"
-                        }`}>
-                          {req.method}
+                ) : (
+                  filteredCollections.map((col) => {
+                    const isCollapsed = collapsedCols[col.id];
+                    return (
+                      <div key={col.id} className="rounded-lg border border-border/40 bg-card/20 overflow-hidden mb-1.5">
+                        {/* Collection Header */}
+                        <div
+                          onClick={() => toggleColCollapse(col.id)}
+                          className="flex items-center justify-between p-2 hover:bg-accent/50 cursor-pointer group transition-colors select-none"
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            {isCollapsed ? (
+                              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                            )}
+                            {isCollapsed ? (
+                              <Folder className="w-4 h-4 text-amber-500 shrink-0 fill-amber-500/10" />
+                            ) : (
+                              <FolderOpen className="w-4 h-4 text-amber-500 shrink-0 fill-amber-500/20" />
+                            )}
+                            <span className="text-xs font-bold truncate text-foreground/90">{col.name}</span>
+                            <span className="text-[10px] text-muted-foreground bg-accent/60 px-1.5 py-0.2 rounded-full">
+                              {col.requests.length}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addRequestToCollection(col.id);
+                              }}
+                              className="p-1 hover:text-primary rounded cursor-pointer"
+                              title="Add Request to Folder"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleExportCollection(col);
+                              }}
+                              className="p-1 hover:text-indigo-500 rounded cursor-pointer"
+                              title="Export Postman Collection JSON"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Delete collection "${col.name}"?`)) {
+                                  deleteApiCollection(col.id);
+                                }
+                              }}
+                              className="p-1 hover:text-red-500 rounded cursor-pointer"
+                              title="Delete Collection"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Requests List under Collection */}
+                        {!isCollapsed && (
+                          <div className="pl-4 pr-1 pb-1 space-y-0.5 border-t border-border/20 bg-background/30">
+                            {col.requests.length === 0 ? (
+                              <div className="text-[11px] text-muted-foreground py-2 pl-2 italic flex items-center justify-between">
+                                <span>No requests in folder</span>
+                                <button
+                                  onClick={() => addRequestToCollection(col.id)}
+                                  className="text-[10px] text-primary hover:underline font-semibold cursor-pointer"
+                                >
+                                  + Add
+                                </button>
+                              </div>
+                            ) : (
+                              col.requests.map((req) => {
+                                const isActive = activeApiRequest.id === req.id;
+                                return (
+                                  <div
+                                    key={req.id}
+                                    onClick={() => setActiveApiRequest(req)}
+                                    className={`group flex items-center justify-between p-1.5 rounded text-xs cursor-pointer transition-all ${
+                                      isActive
+                                        ? "bg-primary/15 border-l-2 border-primary font-semibold text-primary"
+                                        : "hover:bg-accent/60 text-foreground/80"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                      <span
+                                        className={`text-[9px] font-extrabold px-1 rounded uppercase shrink-0 ${
+                                          req.method === "GET"
+                                            ? "text-green-600 bg-green-500/10"
+                                            : req.method === "POST"
+                                            ? "text-blue-600 bg-blue-500/10"
+                                            : req.method === "PUT"
+                                            ? "text-amber-600 bg-amber-500/10"
+                                            : "text-red-600 bg-red-500/10"
+                                        }`}
+                                      >
+                                        {req.method}
+                                      </span>
+                                      <span className="truncate">{req.name || req.url}</span>
+                                    </div>
+
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        deleteRequestFromCollection(col.id, req.id);
+                                      }}
+                                      className="p-1 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                      title="Remove from collection"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </>
+            )}
+
+            {sidebarTab === "history" && (
+              <>
+                <div className="flex items-center justify-between px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase">
+                  <span>Execution History ({apiHistory.length})</span>
+                  <button
+                    onClick={clearApiHistory}
+                    className="text-[9px] text-primary hover:underline font-semibold cursor-pointer"
+                  >
+                    Clear All
+                  </button>
+                </div>
+
+                {apiHistory.length === 0 ? (
+                  <div className="text-xs text-muted-foreground text-center py-8">
+                    No request history recorded yet.
+                  </div>
+                ) : (
+                  apiHistory.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => setActiveApiRequest(item)}
+                      className="p-2 rounded border border-border/30 hover:bg-accent text-xs cursor-pointer flex items-center justify-between gap-2 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span
+                          className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase shrink-0 ${
+                            item.method === "GET"
+                              ? "text-green-600 bg-green-500/10"
+                              : item.method === "POST"
+                              ? "text-blue-600 bg-blue-500/10"
+                              : "text-amber-600 bg-amber-500/10"
+                          }`}
+                        >
+                          {item.method}
                         </span>
-                        <span className="truncate text-foreground/80 font-medium">{req.url}</span>
+                        <span className="truncate text-foreground/90 font-mono text-[11px]">
+                          {item.url}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span
+                          className={`text-[10px] font-bold font-mono ${
+                            item.statusCode >= 200 && item.statusCode < 300
+                              ? "text-green-500"
+                              : "text-red-500"
+                          }`}
+                        >
+                          {item.statusCode || "CORS"}
+                        </span>
+                        <span className="text-[9px] text-muted-foreground">{item.duration}ms</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </>
+            )}
+          </div>
+        </aside>
+
+        {/* ================= RIGHT WORKSPACE (HTTP Dispatcher & Response) ================= */}
+        <main className="flex-1 flex flex-col overflow-hidden bg-background">
+          
+          {/* URL Input Toolbar */}
+          <div className="p-3 border-b border-border bg-card/20 flex items-center gap-2 shrink-0 flex-wrap">
+            {/* Method Select */}
+            <select
+              value={activeApiRequest.method}
+              onChange={(e) => updateActiveApiRequest({ method: e.target.value as any })}
+              className={`px-3 py-2 bg-background border border-border rounded text-xs font-black uppercase cursor-pointer ${
+                activeApiRequest.method === "GET"
+                  ? "text-green-600"
+                  : activeApiRequest.method === "POST"
+                  ? "text-blue-600"
+                  : activeApiRequest.method === "PUT"
+                  ? "text-amber-600"
+                  : "text-red-600"
+              }`}
+            >
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="DELETE">DELETE</option>
+            </select>
+
+            {/* URL Input */}
+            <div className="flex-1 min-w-[240px] relative flex items-center">
+              <input
+                type="text"
+                value={activeApiRequest.url}
+                onChange={(e) => updateActiveApiRequest({ url: e.target.value })}
+                placeholder="Enter HTTP Request URL e.g. http://localhost:5072/analytics/departmentanalytics"
+                className="w-full text-xs font-mono bg-background border border-border rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors"
+              />
+            </div>
+
+            {/* Send Button */}
+            <button
+              onClick={handleSendRequest}
+              disabled={isLoading || !activeApiRequest.url.trim()}
+              className="flex items-center gap-2 px-5 py-2 bg-primary hover:opacity-95 text-primary-foreground font-bold rounded text-xs transition-all disabled:opacity-50 cursor-pointer shadow-sm"
+            >
+              {isLoading ? (
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Send className="w-3.5 h-3.5" />
+              )}
+              <span>Send</span>
+            </button>
+
+            {/* Save Request Button */}
+            <button
+              onClick={() => {
+                setReqSaveTitle(activeApiRequest.name || `${activeApiRequest.method} ${activeApiRequest.url}`);
+                setShowSaveColModal(true);
+              }}
+              aria-label="Save Request"
+              className="px-3 py-2 border border-border hover:bg-accent rounded text-xs font-semibold cursor-pointer flex items-center gap-1.5"
+            >
+              <FolderPlus className="w-3.5 h-3.5 text-muted-foreground" />
+              <span>Save</span>
+            </button>
+
+            {/* Copy cURL Button */}
+            <button
+              onClick={handleCopyCurl}
+              aria-label="Copy cURL command"
+              className="px-2.5 py-2 border border-border hover:bg-accent rounded text-xs font-semibold cursor-pointer"
+              title="Copy cURL command to clipboard"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Request Section Tabs (Params, Headers, Auth, Body) */}
+          <div className="h-9 border-b border-border bg-card/40 flex items-center px-4 gap-5 shrink-0">
+            <button
+              onClick={() => setActiveReqTab("params")}
+              className={`text-xs font-bold h-full border-b-2 px-1 transition-all cursor-pointer ${
+                activeReqTab === "params"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Params ({queryParams.length})
+            </button>
+
+            <button
+              onClick={() => setActiveReqTab("headers")}
+              className={`text-xs font-bold h-full border-b-2 px-1 transition-all cursor-pointer ${
+                activeReqTab === "headers"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Headers ({activeApiRequest.headers.filter((h) => h.enabled && h.key).length})
+            </button>
+
+            <button
+              onClick={() => setActiveReqTab("auth")}
+              className={`text-xs font-bold h-full border-b-2 px-1 transition-all cursor-pointer ${
+                activeReqTab === "auth"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Authorization {activeApiRequest.auth.type !== "none" && "•"}
+            </button>
+
+            {activeApiRequest.method !== "GET" && (
+              <button
+                onClick={() => setActiveReqTab("body")}
+                className={`text-xs font-bold h-full border-b-2 px-1 transition-all cursor-pointer ${
+                  activeReqTab === "body"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Body {activeApiRequest.bodyType !== "none" && "•"}
+              </button>
+            )}
+          </div>
+
+          {/* Request Tab Contents Panel */}
+          <div className="h-48 border-b border-border p-3 overflow-y-auto shrink-0 bg-background/50">
+            
+            {/* PARAMS TAB */}
+            {activeReqTab === "params" && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
+                  <span>URL Query Parameters</span>
+                  <button
+                    onClick={handleAddQueryParam}
+                    className="text-primary hover:underline flex items-center gap-1 cursor-pointer font-bold"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Query Parameter
+                  </button>
+                </div>
+
+                {queryParams.length === 0 ? (
+                  <div className="text-xs text-muted-foreground py-3 italic">
+                    No query parameters. Click "Add Query Parameter" above to append params to the request URL.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {queryParams.map((param, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          placeholder="Key"
+                          value={param.key}
+                          onChange={(e) => handleUpdateQueryParam(idx, e.target.value, param.value)}
+                          className="text-xs font-mono bg-card border border-border rounded p-1.5 flex-1 focus:outline-none focus:border-primary"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Value"
+                          value={param.value}
+                          onChange={(e) => handleUpdateQueryParam(idx, param.key, e.target.value)}
+                          className="text-xs font-mono bg-card border border-border rounded p-1.5 flex-1 focus:outline-none focus:border-primary"
+                        />
+                        <button
+                          onClick={() => handleRemoveQueryParam(idx)}
+                          className="p-1 hover:text-red-500 rounded cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     ))}
                   </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* History list */}
-        <div className="h-60 flex flex-col overflow-hidden">
-          <div className="px-4 py-2 bg-accent/40 border-b border-border text-[10px] font-bold text-muted-foreground uppercase flex items-center justify-between">
-            <span>API History</span>
-            <button 
-              onClick={clearApiHistory}
-              className="text-[9px] text-primary hover:underline font-semibold cursor-pointer"
-            >
-              Clear
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {apiHistory.length === 0 ? (
-              <div className="text-xs text-muted-foreground text-center py-6">
-                No request logs.
+                )}
               </div>
-            ) : (
-              apiHistory.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => setActiveApiRequest(item)}
-                  className="p-1.5 rounded hover:bg-accent text-[10px] font-mono cursor-pointer flex items-center justify-between gap-1 border border-border/20"
-                >
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <span className={`text-[8px] font-extrabold px-1 rounded ${
-                      item.method === "GET" ? "text-green-500 bg-green-500/5" : "text-blue-500 bg-blue-500/5"
-                    }`}>
-                      {item.method}
-                    </span>
-                    <span className="truncate text-foreground/90">{item.url}</span>
+            )}
+
+            {/* HEADERS TAB */}
+            {activeReqTab === "headers" && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
+                  <span>HTTP Request Headers</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleAddCommonHeader("Content-Type", "application/json")}
+                      className="text-[10px] text-muted-foreground hover:text-foreground border border-border rounded px-1.5 py-0.5 cursor-pointer"
+                    >
+                      + Content-Type
+                    </button>
+                    <button
+                      onClick={() => handleAddCommonHeader("Authorization", "Bearer token_here")}
+                      className="text-[10px] text-muted-foreground hover:text-foreground border border-border rounded px-1.5 py-0.5 cursor-pointer"
+                    >
+                      + Authorization
+                    </button>
+                    <button
+                      onClick={handleAddHeader}
+                      className="text-primary hover:underline flex items-center gap-1 cursor-pointer font-bold"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Header
+                    </button>
                   </div>
-                  <span className={`text-[9px] font-bold ${item.statusCode >= 200 && item.statusCode < 300 ? "text-green-500" : "text-red-500"}`}>
-                    {item.statusCode || "CORS"}
-                  </span>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
-      </aside>
 
-      {/* Main Request Dispatcher Panel */}
-      <main className="flex-1 flex flex-col overflow-hidden bg-background">
-        
-        {/* URL Bar */}
-        <div className="p-4 border-b border-border bg-card/20 flex gap-2 shrink-0 flex-wrap">
-          {/* Method Select */}
-          <select
-            value={activeApiRequest.method}
-            onChange={(e) => updateActiveApiRequest({ method: e.target.value as any })}
-            className="px-3 py-2 bg-background border border-border rounded text-xs font-bold uppercase cursor-pointer"
-          >
-            <option value="GET">GET</option>
-            <option value="POST">POST</option>
-            <option value="PUT">PUT</option>
-            <option value="PATCH">PATCH</option>
-            <option value="DELETE">DELETE</option>
-          </select>
-
-          {/* URL Input */}
-          <input
-            type="text"
-            value={activeApiRequest.url}
-            onChange={(e) => updateActiveApiRequest({ url: e.target.value })}
-            placeholder="https://api.github.com/users/google"
-            className="flex-1 min-w-[200px] text-xs bg-background border border-border rounded px-3 py-2 focus:outline-none focus:border-primary"
-          />
-
-          {/* Actions */}
-          <button
-            onClick={handleSendRequest}
-            disabled={isLoading || !activeApiRequest.url.trim()}
-            className="flex items-center gap-1.5 px-4 py-2 bg-primary hover:opacity-95 text-primary-foreground font-bold rounded text-xs transition-all disabled:opacity-50 cursor-pointer shadow-sm"
-          >
-            {isLoading ? (
-              <div className="w-3.5 h-3.5 border border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Send className="w-3.5 h-3.5" />
-            )}
-            <span>Send</span>
-          </button>
-
-          <button
-            onClick={() => setShowSaveColModal(true)}
-            className="px-3 py-2 border border-border hover:bg-accent rounded text-xs font-semibold cursor-pointer"
-          >
-            Save Request
-          </button>
-
-          <button
-            onClick={handleCopyCurl}
-            className="px-2 py-2 border border-border hover:bg-accent rounded text-xs font-semibold cursor-pointer"
-            title="Copy cURL command"
-          >
-            <Copy className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Request Tabs Selection (Params, Headers, Auth, Body) */}
-        <div className="h-9 border-b border-border bg-card/45 flex items-center px-4 gap-4 shrink-0">
-          <button
-            onClick={() => setActiveReqTab("params")}
-            className={`text-xs font-semibold h-full border-b-2 px-1 transition-all cursor-pointer ${
-              activeReqTab === "params" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Params
-          </button>
-          <button
-            onClick={() => setActiveReqTab("headers")}
-            className={`text-xs font-semibold h-full border-b-2 px-1 transition-all cursor-pointer ${
-              activeReqTab === "headers" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Headers ({activeApiRequest.headers.length})
-          </button>
-          <button
-            onClick={() => setActiveReqTab("auth")}
-            className={`text-xs font-semibold h-full border-b-2 px-1 transition-all cursor-pointer ${
-              activeReqTab === "auth" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Authorization
-          </button>
-          {activeApiRequest.method !== "GET" && (
-            <button
-              onClick={() => setActiveReqTab("body")}
-              className={`text-xs font-semibold h-full border-b-2 px-1 transition-all cursor-pointer ${
-                activeReqTab === "body" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Body
-            </button>
-          )}
-        </div>
-
-        {/* Request Tab Contents */}
-        <div className="h-44 border-b border-border p-4 overflow-y-auto shrink-0 bg-background">
-          {activeReqTab === "params" && (
-            <div className="space-y-2">
-              <div className="text-[10px] text-muted-foreground font-semibold flex items-center justify-between">
-                <span>Query Parameters (Appended directly in URL)</span>
-                <button
-                  onClick={handleAddParam}
-                  className="text-primary hover:underline font-bold flex items-center gap-1 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add Param
-                </button>
-              </div>
-              <p className="text-xs text-muted-foreground italic">
-                Edit the query parameters directly in the URL bar above.
-              </p>
-            </div>
-          )}
-
-          {activeReqTab === "headers" && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-[10px] text-muted-foreground font-semibold">
-                <span>Request Headers</span>
-                <button
-                  onClick={handleAddHeader}
-                  className="text-primary hover:underline font-bold flex items-center gap-1 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add Header
-                </button>
-              </div>
-
-              {activeApiRequest.headers.length === 0 ? (
-                <div className="text-xs text-muted-foreground py-2 italic">No custom headers.</div>
-              ) : (
                 <div className="space-y-1.5">
                   {activeApiRequest.headers.map((h, idx) => (
-                    <div key={idx} className="flex gap-2 items-center">
+                    <div key={idx} className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={h.enabled}
@@ -652,17 +1151,17 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                       />
                       <input
                         type="text"
-                        placeholder="Key"
+                        placeholder="Header Key (e.g. Authorization)"
                         value={h.key}
                         onChange={(e) => handleUpdateHeader(idx, { key: e.target.value })}
-                        className="text-xs bg-card border border-border rounded p-1 flex-1 focus:outline-none"
+                        className="text-xs font-mono bg-card border border-border rounded p-1.5 flex-1 focus:outline-none focus:border-primary"
                       />
                       <input
                         type="text"
-                        placeholder="Value"
+                        placeholder="Header Value"
                         value={h.value}
                         onChange={(e) => handleUpdateHeader(idx, { value: e.target.value })}
-                        className="text-xs bg-card border border-border rounded p-1 flex-1 focus:outline-none"
+                        className="text-xs font-mono bg-card border border-border rounded p-1.5 flex-1 focus:outline-none focus:border-primary"
                       />
                       <button
                         onClick={() => handleRemoveHeader(idx)}
@@ -673,165 +1172,179 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
-          )}
-
-          {activeReqTab === "auth" && (
-            <div className="space-y-3 max-w-md">
-              <div className="flex flex-col space-y-1">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase">Auth Type</label>
-                <select
-                  value={activeApiRequest.auth.type}
-                  onChange={(e) => updateActiveApiRequest({ auth: { ...activeApiRequest.auth, type: e.target.value as any } })}
-                  className="text-xs bg-card border border-border rounded p-2 focus:outline-none cursor-pointer"
-                >
-                  <option value="none">No Auth</option>
-                  <option value="bearer">Bearer Token</option>
-                  <option value="basic">Basic Auth</option>
-                  <option value="apikey">API Key</option>
-                </select>
               </div>
+            )}
 
-              {activeApiRequest.auth.type === "bearer" && (
+            {/* AUTHORIZATION TAB */}
+            {activeReqTab === "auth" && (
+              <div className="space-y-3 max-w-md">
                 <div className="flex flex-col space-y-1">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Token</label>
-                  <input
-                    type="password"
-                    placeholder="Bearer token value"
-                    value={activeApiRequest.auth.bearerToken || ""}
-                    onChange={(e) => updateActiveApiRequest({ auth: { ...activeApiRequest.auth, bearerToken: e.target.value } })}
-                    className="text-xs bg-card border border-border rounded p-2 focus:outline-none"
-                  />
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Auth Type</label>
+                  <select
+                    value={activeApiRequest.auth.type}
+                    onChange={(e) =>
+                      updateActiveApiRequest({
+                        auth: { ...activeApiRequest.auth, type: e.target.value as any },
+                      })
+                    }
+                    className="text-xs bg-card border border-border rounded p-2 focus:outline-none cursor-pointer"
+                  >
+                    <option value="none">No Auth</option>
+                    <option value="bearer">Bearer Token</option>
+                    <option value="basic">Basic Auth</option>
+                    <option value="apikey">API Key Header</option>
+                  </select>
                 </div>
-              )}
 
-              {activeApiRequest.auth.type === "basic" && (
-                <div className="grid grid-cols-2 gap-2">
+                {activeApiRequest.auth.type === "bearer" && (
                   <div className="flex flex-col space-y-1">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Username</label>
-                    <input
-                      type="text"
-                      placeholder="Username"
-                      value={activeApiRequest.auth.basicUser || ""}
-                      onChange={(e) => updateActiveApiRequest({ auth: { ...activeApiRequest.auth, basicUser: e.target.value } })}
-                      className="text-xs bg-card border border-border rounded p-2 focus:outline-none"
-                    />
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Password</label>
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Bearer Token</label>
                     <input
                       type="password"
-                      placeholder="Password"
-                      value={activeApiRequest.auth.basicPass || ""}
-                      onChange={(e) => updateActiveApiRequest({ auth: { ...activeApiRequest.auth, basicPass: e.target.value } })}
-                      className="text-xs bg-card border border-border rounded p-2 focus:outline-none"
+                      placeholder="Paste Bearer Token or {{token}}"
+                      value={activeApiRequest.auth.bearerToken || ""}
+                      onChange={(e) =>
+                        updateActiveApiRequest({
+                          auth: { ...activeApiRequest.auth, bearerToken: e.target.value },
+                        })
+                      }
+                      className="text-xs font-mono bg-card border border-border rounded p-2 focus:outline-none focus:border-primary"
                     />
                   </div>
-                </div>
-              )}
+                )}
 
-              {activeApiRequest.auth.type === "apikey" && (
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="flex flex-col space-y-1">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Header Key</label>
-                    <input
-                      type="text"
-                      placeholder="X-API-Key"
-                      value={activeApiRequest.auth.apiKeyName || ""}
-                      onChange={(e) => updateActiveApiRequest({ auth: { ...activeApiRequest.auth, apiKeyName: e.target.value } })}
-                      className="text-xs bg-card border border-border rounded p-2 focus:outline-none"
-                    />
+                {activeApiRequest.auth.type === "basic" && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col space-y-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Username</label>
+                      <input
+                        type="text"
+                        placeholder="Username"
+                        value={activeApiRequest.auth.basicUser || ""}
+                        onChange={(e) =>
+                          updateActiveApiRequest({
+                            auth: { ...activeApiRequest.auth, basicUser: e.target.value },
+                          })
+                        }
+                        className="text-xs font-mono bg-card border border-border rounded p-2 focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex flex-col space-y-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Password</label>
+                      <input
+                        type="password"
+                        placeholder="Password"
+                        value={activeApiRequest.auth.basicPass || ""}
+                        onChange={(e) =>
+                          updateActiveApiRequest({
+                            auth: { ...activeApiRequest.auth, basicPass: e.target.value },
+                          })
+                        }
+                        className="text-xs font-mono bg-card border border-border rounded p-2 focus:outline-none"
+                      />
+                    </div>
                   </div>
-                  <div className="flex flex-col space-y-1">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Key Value</label>
-                    <input
-                      type="password"
-                      placeholder="Secret key"
-                      value={activeApiRequest.auth.apiKeyValue || ""}
-                      onChange={(e) => updateActiveApiRequest({ auth: { ...activeApiRequest.auth, apiKeyValue: e.target.value } })}
-                      className="text-xs bg-card border border-border rounded p-2 focus:outline-none"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+                )}
 
-          {activeReqTab === "body" && activeApiRequest.method !== "GET" && (
-            <div className="space-y-3 h-full flex flex-col">
-              <div className="flex items-center gap-4 text-xs font-semibold">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={activeApiRequest.bodyType === "none"}
-                    onChange={() => updateActiveApiRequest({ bodyType: "none" })}
-                    className="text-primary w-3.5 h-3.5"
-                  />
-                  <span>None</span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={activeApiRequest.bodyType === "json"}
-                    onChange={() => updateActiveApiRequest({ bodyType: "json" })}
-                    className="text-primary w-3.5 h-3.5"
-                  />
-                  <span>JSON</span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={activeApiRequest.bodyType === "form"}
-                    onChange={() => updateActiveApiRequest({ bodyType: "form" })}
-                    className="text-primary w-3.5 h-3.5"
-                  />
-                  <span>Form URL Encoded</span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={activeApiRequest.bodyType === "raw"}
-                    onChange={() => updateActiveApiRequest({ bodyType: "raw" })}
-                    className="text-primary w-3.5 h-3.5"
-                  />
-                  <span>Raw Text</span>
-                </label>
+                {activeApiRequest.auth.type === "apikey" && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col space-y-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Key Header Name</label>
+                      <input
+                        type="text"
+                        placeholder="X-API-Key"
+                        value={activeApiRequest.auth.apiKeyName || ""}
+                        onChange={(e) =>
+                          updateActiveApiRequest({
+                            auth: { ...activeApiRequest.auth, apiKeyName: e.target.value },
+                          })
+                        }
+                        className="text-xs font-mono bg-card border border-border rounded p-2 focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex flex-col space-y-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Value</label>
+                      <input
+                        type="password"
+                        placeholder="Secret key value"
+                        value={activeApiRequest.auth.apiKeyValue || ""}
+                        onChange={(e) =>
+                          updateActiveApiRequest({
+                            auth: { ...activeApiRequest.auth, apiKeyValue: e.target.value },
+                          })
+                        }
+                        className="text-xs font-mono bg-card border border-border rounded p-2 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
+            )}
 
-              {activeApiRequest.bodyType === "json" && (
-                <textarea
-                  value={activeApiRequest.body}
-                  onChange={(e) => updateActiveApiRequest({ body: e.target.value })}
-                  className="flex-1 w-full p-2 bg-card border border-border rounded font-mono text-xs focus:outline-none focus:border-primary min-h-[80px]"
-                />
-              )}
-
-              {activeApiRequest.bodyType === "raw" && (
-                <textarea
-                  value={activeApiRequest.body}
-                  onChange={(e) => updateActiveApiRequest({ body: e.target.value })}
-                  placeholder="Raw payload content"
-                  className="flex-1 w-full p-2 bg-card border border-border rounded font-mono text-xs focus:outline-none focus:border-primary min-h-[80px]"
-                />
-              )}
-
-              {activeApiRequest.bodyType === "form" && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground font-semibold">
-                    <span>Form Fields</span>
-                    <button
-                      onClick={handleAddFormData}
-                      className="text-primary hover:underline font-bold flex items-center gap-1 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Add Field
-                    </button>
+            {/* BODY TAB */}
+            {activeReqTab === "body" && activeApiRequest.method !== "GET" && (
+              <div className="space-y-2 h-full flex flex-col">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4 text-xs font-semibold">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={activeApiRequest.bodyType === "none"}
+                        onChange={() => updateActiveApiRequest({ bodyType: "none" })}
+                        className="text-primary"
+                      />
+                      <span>none</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={activeApiRequest.bodyType === "json"}
+                        onChange={() => updateActiveApiRequest({ bodyType: "json" })}
+                        className="text-primary"
+                      />
+                      <span>JSON</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={activeApiRequest.bodyType === "form"}
+                        onChange={() => updateActiveApiRequest({ bodyType: "form" })}
+                        className="text-primary"
+                      />
+                      <span>x-www-form-urlencoded</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={activeApiRequest.bodyType === "raw"}
+                        onChange={() => updateActiveApiRequest({ bodyType: "raw" })}
+                        className="text-primary"
+                      />
+                      <span>raw</span>
+                    </label>
                   </div>
-                  {activeApiRequest.formData.length === 0 ? (
-                    <div className="text-xs text-muted-foreground italic py-1">No form parameters.</div>
-                  ) : (
-                    activeApiRequest.formData.map((f, idx) => (
-                      <div key={idx} className="flex gap-2 items-center">
+
+                  {activeApiRequest.bodyType === "json" && (
+                    <button
+                      onClick={handlePrettifyBody}
+                      className="text-[11px] text-primary hover:underline font-bold cursor-pointer"
+                    >
+                      Prettify JSON
+                    </button>
+                  )}
+                </div>
+
+                {activeApiRequest.bodyType === "json" || activeApiRequest.bodyType === "raw" ? (
+                  <textarea
+                    value={activeApiRequest.body}
+                    onChange={(e) => updateActiveApiRequest({ body: e.target.value })}
+                    placeholder="Enter JSON body content..."
+                    className="w-full h-32 text-xs font-mono bg-card border border-border rounded p-2 focus:outline-none focus:border-primary resize-none"
+                  />
+                ) : activeApiRequest.bodyType === "form" ? (
+                  <div className="space-y-1.5">
+                    {activeApiRequest.formData.map((f, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
                         <input
                           type="checkbox"
                           checked={f.enabled}
@@ -840,322 +1353,478 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                         />
                         <input
                           type="text"
-                          placeholder="Field Key"
+                          placeholder="Key"
                           value={f.key}
                           onChange={(e) => handleUpdateFormData(idx, { key: e.target.value })}
-                          className="text-xs bg-card border border-border rounded p-1 flex-1 focus:outline-none"
+                          className="text-xs font-mono bg-card border border-border rounded p-1.5 flex-1 focus:outline-none"
                         />
                         <input
                           type="text"
-                          placeholder="Field Value"
+                          placeholder="Value"
                           value={f.value}
                           onChange={(e) => handleUpdateFormData(idx, { value: e.target.value })}
-                          className="text-xs bg-card border border-border rounded p-1 flex-1 focus:outline-none"
+                          className="text-xs font-mono bg-card border border-border rounded p-1.5 flex-1 focus:outline-none"
                         />
                         <button
                           onClick={() => handleRemoveFormData(idx)}
-                          className="p-1 hover:text-red-500 rounded cursor-pointer"
+                          className="p-1 hover:text-red-500 cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+                    ))}
+                    <button
+                      onClick={handleAddFormData}
+                      className="text-xs text-primary hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Form Field
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground py-4 italic">No request body attached.</div>
+                )}
+              </div>
+            )}
+          </div>
 
-        {/* Response Panel Area */}
-        <div className="flex-1 flex flex-col min-h-0 bg-background/50">
-          
-          {/* Response status bar */}
-          <div className="px-4 py-2 border-b border-border bg-accent/25 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-3 text-xs font-semibold">
-              <span className="text-muted-foreground">Response Panel</span>
+          {/* ================= RESPONSE SECTION ================= */}
+          <div className="flex-1 flex flex-col overflow-hidden bg-background">
+            {/* Response Status Bar */}
+            <div className="h-10 border-b border-border bg-card/30 px-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Response</span>
+                
+                {response && (
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`text-xs font-black px-2 py-0.5 rounded ${
+                        response.status >= 200 && response.status < 300
+                          ? "bg-green-500/15 text-green-500"
+                          : response.status >= 400
+                          ? "bg-red-500/15 text-red-500"
+                          : "bg-amber-500/15 text-amber-500"
+                      }`}
+                    >
+                      Status: {response.status === 0 ? "CORS Blocked" : response.status}
+                    </span>
+
+                    <span className="text-xs text-muted-foreground font-mono">
+                      Time: <strong className="text-foreground">{response.timeMs} ms</strong>
+                    </span>
+
+                    <span className="text-xs text-muted-foreground font-mono">
+                      Size: <strong className="text-foreground">{(response.sizeBytes / 1024).toFixed(2)} KB</strong>
+                    </span>
+                  </div>
+                )}
+              </div>
+
               {response && (
                 <div className="flex items-center gap-2">
-                  {/* Status Badge */}
-                  <span className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] ${
-                    response.status >= 200 && response.status < 300 ? "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" :
-                    response.status >= 400 ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400" : "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400"
-                  }`}>
-                    Status: {response.status === 0 ? "CORS Blocked" : response.status}
-                  </span>
+                  {/* Tabs for Response: Pretty / Raw / Headers */}
+                  <div className="flex gap-1 bg-accent/30 p-0.5 rounded">
+                    <button
+                      onClick={() => setActiveResTab("pretty")}
+                      className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
+                        activeResTab === "pretty" ? "bg-background shadow-xs text-primary" : "text-muted-foreground"
+                      }`}
+                    >
+                      Pretty
+                    </button>
+                    <button
+                      onClick={() => setActiveResTab("raw")}
+                      className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
+                        activeResTab === "raw" ? "bg-background shadow-xs text-primary" : "text-muted-foreground"
+                      }`}
+                    >
+                      Raw
+                    </button>
+                    <button
+                      onClick={() => setActiveResTab("headers")}
+                      className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
+                        activeResTab === "headers" ? "bg-background shadow-xs text-primary" : "text-muted-foreground"
+                      }`}
+                    >
+                      Headers ({Object.keys(response.headers).length})
+                    </button>
+                  </div>
 
-                  <span className="text-muted-foreground flex items-center gap-1 text-[10px]">
-                    <Clock className="w-3 h-3" /> {response.timeMs} ms
-                  </span>
-
-                  <span className="text-muted-foreground text-[10px]">
-                    {(response.sizeBytes / 1024).toFixed(2)} KB
-                  </span>
+                  {/* Direct Action: Save Response as JSON Blob */}
+                  <button
+                    onClick={handleSaveResponseAsBlob}
+                    className="px-2.5 py-1 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                    title="Save this API response payload as a new file in your workspace JSON Explorer"
+                  >
+                    <FileJson className="w-3.5 h-3.5" />
+                    <span>Save as Workspace Blob</span>
+                  </button>
                 </div>
               )}
             </div>
 
-            {response && (
-              <div className="flex gap-2">
-                <button
-                  onClick={handleSaveResponseAsBlob}
-                  className="px-2.5 py-1 text-xs border border-border hover:bg-accent rounded font-bold flex items-center gap-1 cursor-pointer"
-                  title="Import response payload as editable JSON blob in workspace"
-                >
-                  <Plus className="w-3.5 h-3.5 text-primary" />
-                  <span>Save as Blob</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Response Tabs (Pretty, Raw, Headers) */}
-          {response && (
-            <div className="h-8 border-b border-border bg-card/25 flex items-center px-4 gap-4 shrink-0">
-              <button
-                onClick={() => setActiveResTab("pretty")}
-                className={`text-xs font-semibold h-full border-b-2 px-1 transition-all cursor-pointer ${
-                  activeResTab === "pretty" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Pretty Body
-              </button>
-              <button
-                onClick={() => setActiveResTab("raw")}
-                className={`text-xs font-semibold h-full border-b-2 px-1 transition-all cursor-pointer ${
-                  activeResTab === "raw" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Raw Body
-              </button>
-              <button
-                onClick={() => setActiveResTab("headers")}
-                className={`text-xs font-semibold h-full border-b-2 px-1 transition-all cursor-pointer ${
-                  activeResTab === "headers" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Headers ({Object.keys(response.headers).length})
-              </button>
-            </div>
-          )}
-
-          {/* Response Payload Rendering */}
-          <div className="flex-1 overflow-auto p-4 bg-background">
-            {isLoading ? (
-              <div className="flex flex-col items-center justify-center h-full space-y-2">
-                <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs text-muted-foreground font-semibold">Sending API request...</span>
-              </div>
-            ) : errorInfo && response && response.status === 0 ? (
-              <div className="flex flex-col space-y-4 max-w-xl">
-                <div className="flex gap-2.5 p-3.5 text-xs font-mono rounded border border-orange-500/25 bg-orange-50/50 dark:bg-orange-950/10 text-orange-500">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold block mb-1">CORS Restriction Warning</span>
-                    <span>{JSON.parse(response.body).hint}</span>
+            {/* Response Content Viewer */}
+            <div className="flex-1 overflow-hidden relative">
+              {isLoading ? (
+                <div className="h-full flex flex-col items-center justify-center gap-3 text-muted-foreground">
+                  <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs font-semibold">Executing API Request...</span>
+                </div>
+              ) : response ? (
+                activeResTab === "pretty" ? (
+                  <MonacoEditor
+                    value={response.body}
+                    onChange={() => {}}
+                    language="json"
+                    isDark={isDark}
+                    readOnly
+                  />
+                ) : activeResTab === "raw" ? (
+                  <textarea
+                    readOnly
+                    value={response.body}
+                    className="w-full h-full p-4 font-mono text-xs bg-background text-foreground resize-none outline-none"
+                  />
+                ) : (
+                  <div className="p-4 overflow-y-auto h-full space-y-1.5 font-mono text-xs">
+                    {Object.entries(response.headers).map(([k, v]) => (
+                      <div key={k} className="flex gap-2 border-b border-border/20 py-1">
+                        <span className="font-bold text-primary w-48 truncate">{k}:</span>
+                        <span className="text-foreground/90 break-all">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
+                  <Globe className="w-12 h-12 text-muted-foreground/30" />
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-bold text-muted-foreground">No Response Yet</h3>
+                    <p className="text-xs text-muted-foreground max-w-sm">
+                      Enter an API URL above and click <strong>Send</strong> to execute HTTP requests like Postman.
+                    </p>
                   </div>
                 </div>
-                
-                {/* Visual JSON response output for CORS mock fallback */}
-                <div className="border border-border rounded-lg p-3 bg-card h-40 overflow-y-auto">
-                  <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap">{response.body}</pre>
-                </div>
-              </div>
-            ) : response ? (
-              activeResTab === "pretty" ? (
-                <div className="h-full border border-border rounded overflow-hidden">
-                  <MonacoEditor
-                    value={(() => {
-                      try {
-                        return JSON.stringify(JSON.parse(response.body), null, 2);
-                      } catch {
-                        return response.body;
-                      }
-                    })()}
-                    onChange={() => {}}
-                    isDark={isDark}
-                    language="json"
-                  />
-                </div>
-              ) : activeResTab === "raw" ? (
-                <pre className="text-xs font-mono bg-card p-3 rounded-lg border border-border overflow-auto max-h-full whitespace-pre-wrap text-foreground/90">
-                  {response.body}
-                </pre>
-              ) : (
-                // Response Headers
-                <div className="border border-border rounded-lg bg-card overflow-hidden">
-                  <table className="w-full text-xs text-left font-mono">
-                    <thead>
-                      <tr className="bg-accent/40 border-b border-border text-muted-foreground select-none font-bold">
-                        <th className="p-2 border-r border-border/60">Header</th>
-                        <th className="p-2">Value</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/60">
-                      {Object.entries(response.headers).map(([k, v]) => (
-                        <tr key={k} className="hover:bg-accent/15">
-                          <td className="p-2 border-r border-border/40 font-semibold text-muted-foreground">{k}</td>
-                          <td className="p-2 text-foreground/90">{v}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            ) : (
-              <div className="text-xs text-muted-foreground flex items-center justify-center h-full gap-1">
-                <Info className="w-4 h-4" />
-                <span>Fill in URL and click Send to request API content. Supports standard methods.</span>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
 
-      {/* ================= cURL IMPORT MODAL ================= */}
-      {showCurlImportModal && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-lg max-w-md w-full p-5 shadow-lg space-y-4 animate-in fade-in zoom-in duration-150 text-foreground">
-            <div>
-              <h3 className="text-sm font-bold">Import cURL Command</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Paste a raw cURL command from your network inspector to auto-populate request headers, method, URL, and JSON payload body.
-              </p>
+      {/* ================= MODAL 1: CREATE COLLECTION MODAL ================= */}
+      {showCreateColModal && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <FolderPlus className="w-4 h-4 text-amber-500" />
+                <span>Create New Collection</span>
+              </div>
+              <button
+                onClick={() => setShowCreateColModal(false)}
+                className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <textarea
-              value={curlString}
-              onChange={(e) => setCurlString(e.target.value)}
-              placeholder="curl -X POST 'https://api.example.com' -H 'Content-Type: application/json' -d '{\&quot;key\&quot;:\&quot;val\&quot;}'"
-              className="w-full h-32 text-xs bg-background border border-border rounded p-2 font-mono focus:outline-none focus:border-primary"
-            />
+            <form onSubmit={handleCreateCollectionSubmit} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-foreground">Collection Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Analytics Services / Auth Endpoints"
+                  value={newColNameInput}
+                  onChange={(e) => setNewColNameInput(e.target.value)}
+                  className="w-full text-xs bg-background border border-border rounded p-2.5 outline-none focus:border-primary"
+                />
+              </div>
 
-            <div className="flex justify-end gap-2 text-xs">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-foreground">Description (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. REST API endpoints for department analytics"
+                  value={newColDescInput}
+                  onChange={(e) => setNewColDescInput(e.target.value)}
+                  className="w-full text-xs bg-background border border-border rounded p-2.5 outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateColModal(false)}
+                  className="px-4 py-2 border border-border rounded text-xs font-semibold hover:bg-accent cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded text-xs font-bold hover:opacity-95 cursor-pointer shadow-sm"
+                >
+                  Create Collection Folder
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL 2: IMPORT MODAL (Postman / OpenAPI / Workspace / cURL) ================= */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <Upload className="w-4 h-4 text-indigo-500" />
+                <span>Import Collections & Workspaces</span>
+              </div>
               <button
-                onClick={() => setShowCurlImportModal(false)}
-                className="px-3 py-1.5 border border-border hover:bg-accent rounded font-medium cursor-pointer"
+                onClick={() => setShowImportModal(false)}
+                className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Tabs for Import format */}
+            <div className="flex border-b border-border bg-accent/20 p-1 rounded-lg gap-1">
+              <button
+                onClick={() => setImportTab("postman")}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded cursor-pointer ${
+                  importTab === "postman" ? "bg-background text-primary shadow-xs" : "text-muted-foreground"
+                }`}
+              >
+                Postman v2.1
+              </button>
+              <button
+                onClick={() => setImportTab("openapi")}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded cursor-pointer ${
+                  importTab === "openapi" ? "bg-background text-primary shadow-xs" : "text-muted-foreground"
+                }`}
+              >
+                OpenAPI / Swagger
+              </button>
+              <button
+                onClick={() => setImportTab("curl")}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded cursor-pointer ${
+                  importTab === "curl" ? "bg-background text-primary shadow-xs" : "text-muted-foreground"
+                }`}
+              >
+                cURL Command
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* File Upload Option */}
+              <div className="border-2 border-dashed border-border hover:border-primary/50 rounded-lg p-4 text-center space-y-2 cursor-pointer relative bg-background/40">
+                <input
+                  type="file"
+                  accept=".json,.txt"
+                  onChange={handleFileUpload}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                />
+                <FileCode className="w-6 h-6 text-muted-foreground mx-auto" />
+                <div className="text-xs text-muted-foreground">
+                  {importFileName ? (
+                    <span className="font-bold text-primary">{importFileName} loaded</span>
+                  ) : (
+                    <span>Click or drag JSON file here (Postman Collection or OpenAPI spec)</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="text-center text-[10px] text-muted-foreground uppercase font-bold">OR PASTE TEXT</div>
+
+              <textarea
+                value={importRawText}
+                onChange={(e) => setImportRawText(e.target.value)}
+                placeholder={
+                  importTab === "curl"
+                    ? 'curl -X POST "http://localhost:5072/analytics" -H "Authorization: Bearer token"'
+                    : "Paste raw JSON collection string here..."
+                }
+                className="w-full h-36 font-mono text-xs bg-background border border-border rounded p-3 outline-none focus:border-primary resize-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="px-4 py-2 border border-border rounded text-xs font-semibold hover:bg-accent cursor-pointer"
               >
                 Cancel
               </button>
               <button
-                onClick={handleCurlImport}
-                className="px-3 py-1.5 bg-primary text-primary-foreground hover:opacity-90 rounded font-semibold cursor-pointer"
+                onClick={handleImportSubmit}
+                disabled={!importRawText.trim()}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded text-xs font-bold hover:opacity-95 disabled:opacity-50 cursor-pointer shadow-sm"
               >
-                Import cURL
+                Import Collection
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ================= SAVE TO COLLECTION MODAL ================= */}
+      {/* ================= MODAL 3: SAVE REQUEST TO COLLECTION ================= */}
       {showSaveColModal && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form
-            onSubmit={handleSaveToColSubmit}
-            className="bg-card border border-border rounded-lg max-w-sm w-full p-5 shadow-lg space-y-4 animate-in fade-in zoom-in duration-150 text-foreground"
-          >
-            <div>
-              <h3 className="text-sm font-bold">Save Request</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Persist this request configuration in an API Collection folder.
-              </p>
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <FolderPlus className="w-4 h-4 text-primary" />
+                <span>Save Request to Collection</span>
+              </div>
+              <button
+                onClick={() => setShowSaveColModal(false)}
+                className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="space-y-3">
+            <form onSubmit={handleSaveToColSubmit} className="space-y-4">
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase">Request Name</label>
+                <label className="text-xs font-semibold text-foreground">Request Title *</label>
                 <input
                   type="text"
                   required
+                  placeholder="e.g. POST departmentanalytics"
                   value={reqSaveTitle}
                   onChange={(e) => setReqSaveTitle(e.target.value)}
-                  placeholder="e.g. Fetch Google User details"
-                  className="w-full text-xs bg-background border border-border rounded p-2 focus:outline-none focus:border-primary"
+                  className="w-full text-xs bg-background border border-border rounded p-2.5 outline-none focus:border-primary"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase">Target Collection</label>
+                <label className="text-xs font-semibold text-foreground">Select Collection Folder *</label>
                 <select
                   value={selectedColId}
                   onChange={(e) => setSelectedColId(e.target.value)}
-                  required
-                  className="w-full text-xs bg-background border border-border rounded p-2 focus:outline-none cursor-pointer"
+                  className="w-full text-xs bg-background border border-border rounded p-2.5 outline-none cursor-pointer focus:border-primary"
                 >
-                  <option value="">Select collection folder...</option>
-                  {apiCollections.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                  <option value="">-- Choose a collection folder --</option>
+                  {apiCollections.map((col) => (
+                    <option key={col.id} value={col.id}>
+                      {col.name} ({col.requests.length} requests)
+                    </option>
                   ))}
                   <option value="new">+ Create New Collection Folder</option>
                 </select>
               </div>
 
               {selectedColId === "new" && (
-                <div className="space-y-1 animate-in slide-in-from-top-2 duration-150">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase">New Collection Name</label>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-foreground">New Collection Folder Name *</label>
                   <input
                     type="text"
                     required
-                    value={newColName}
-                    onChange={(e) => setNewColName(e.target.value)}
-                    placeholder="e.g. Authentication APIs"
-                    className="w-full text-xs bg-background border border-border rounded p-2 focus:outline-none focus:border-primary"
+                    placeholder="e.g. dashboard-analytics"
+                    value={newSaveColName}
+                    onChange={(e) => setNewSaveColName(e.target.value)}
+                    className="w-full text-xs bg-background border border-border rounded p-2.5 outline-none focus:border-primary"
                   />
                 </div>
               )}
-            </div>
 
-            <div className="flex justify-end gap-2 text-xs pt-2">
-              <button
-                type="button"
-                onClick={() => setShowSaveColModal(false)}
-                className="px-3 py-1.5 border border-border hover:bg-accent rounded font-medium cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-3 py-1.5 bg-primary text-primary-foreground hover:opacity-90 rounded font-semibold cursor-pointer"
-              >
-                Save request
-              </button>
-            </div>
-          </form>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSaveColModal(false)}
+                  className="px-4 py-2 border border-border rounded text-xs font-semibold hover:bg-accent cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!selectedColId}
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded text-xs font-bold hover:opacity-95 disabled:opacity-50 cursor-pointer shadow-sm"
+                >
+                  Save Request
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
-      {/* ================= ENVIRONMENTS VARIABLES MODAL ================= */}
+      {/* ================= MODAL 4: ENVIRONMENT VARIABLES ================= */}
       {showEnvModal && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-lg max-w-md w-full p-5 shadow-lg space-y-4 animate-in fade-in zoom-in duration-150 text-foreground flex flex-col max-h-[85vh]">
-            <div>
-              <h3 className="text-sm font-bold">Environment Variables</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Define key/value variables and reference them in inputs using double curly braces: e.g. <span className="font-mono text-primary font-bold">{"{{base_url}}"}</span>.
-              </p>
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <Sliders className="w-4 h-4 text-emerald-500" />
+                <span>Environment Variables</span>
+              </div>
+              <button
+                onClick={() => setShowEnvModal(false)}
+                className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Existing env variables table */}
-            <div className="flex-1 overflow-y-auto space-y-1.5 max-h-[250px] border border-border rounded p-2 bg-background/50">
+            <p className="text-xs text-muted-foreground">
+              Define variables like <code>base_url</code> or <code>token</code> and use them in URLs, headers, or request bodies as <code>{"{{base_url}}"}</code>.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newEnvKey.trim()) return;
+                addEnvVariable({ key: newEnvKey.trim(), value: newEnvValue.trim(), enabled: true });
+                setNewEnvKey("");
+                setNewEnvValue("");
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                type="text"
+                placeholder="Variable Key e.g. base_url"
+                value={newEnvKey}
+                onChange={(e) => setNewEnvKey(e.target.value)}
+                className="text-xs bg-background border border-border rounded p-2 flex-1 outline-none"
+              />
+              <input
+                type="text"
+                placeholder="Value e.g. http://localhost:5072"
+                value={newEnvValue}
+                onChange={(e) => setNewEnvValue(e.target.value)}
+                className="text-xs bg-background border border-border rounded p-2 flex-1 outline-none"
+              />
+              <button
+                type="submit"
+                className="px-3 py-2 bg-primary text-primary-foreground rounded text-xs font-bold hover:opacity-95 cursor-pointer shrink-0"
+              >
+                Add Variable
+              </button>
+            </form>
+
+            <div className="max-h-48 overflow-y-auto space-y-1.5 border-t border-border pt-3">
               {envVariables.length === 0 ? (
-                <div className="text-xs text-muted-foreground text-center py-6 italic">No variables defined yet.</div>
+                <div className="text-xs text-muted-foreground text-center py-4">No environment variables defined yet.</div>
               ) : (
                 envVariables.map((v) => (
-                  <div key={v.id} className="flex gap-2 items-center">
+                  <div key={v.id} className="flex items-center gap-2">
                     <input
                       type="checkbox"
                       checked={v.enabled}
                       onChange={(e) => updateEnvVariable(v.id, { enabled: e.target.checked })}
                       className="rounded border-border w-3.5 h-3.5 text-primary"
                     />
-                    <span className="text-xs font-mono font-bold text-muted-foreground flex-1 truncate pr-1">
-                      {v.key}
-                    </span>
-                    <span className="text-xs font-mono text-foreground/80 flex-1 truncate pr-1">
-                      {v.value}
-                    </span>
+                    <span className="text-xs font-mono font-bold text-primary min-w-[100px]">{"{{"}{v.key}{"}}"}</span>
+                    <input
+                      type="text"
+                      value={v.value}
+                      onChange={(e) => updateEnvVariable(v.id, { value: e.target.value })}
+                      className="text-xs font-mono bg-background border border-border rounded p-1 flex-1 outline-none"
+                    />
                     <button
+                      type="button"
                       onClick={() => deleteEnvVariable(v.id)}
                       className="p-1 hover:text-red-500 rounded cursor-pointer"
                     >
@@ -1166,46 +1835,12 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
               )}
             </div>
 
-            {/* Add variable form */}
-            <form onSubmit={handleEnvSubmit} className="grid grid-cols-2 gap-2 text-xs border-t border-border pt-4 items-end">
-              <div className="space-y-1">
-                <label className="text-[9px] font-bold text-muted-foreground uppercase">Key</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="base_url"
-                  value={newEnvKey}
-                  onChange={(e) => setNewEnvKey(e.target.value)}
-                  className="w-full p-1.5 bg-background border border-border rounded focus:outline-none"
-                />
-              </div>
-              <div className="space-y-1 flex gap-2 items-center">
-                <div className="flex-1 space-y-1">
-                  <label className="text-[9px] font-bold text-muted-foreground uppercase">Value</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="https://api.github.com"
-                    value={newEnvValue}
-                    onChange={(e) => setNewEnvValue(e.target.value)}
-                    className="w-full p-1.5 bg-background border border-border rounded focus:outline-none"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="px-3 py-1.5 bg-primary text-primary-foreground font-bold rounded flex items-center justify-center cursor-pointer"
-                >
-                  Add
-                </button>
-              </div>
-            </form>
-
             <div className="flex justify-end pt-2">
               <button
                 onClick={() => setShowEnvModal(false)}
-                className="px-4 py-1.5 bg-accent hover:bg-accent/80 border border-border rounded text-xs font-medium cursor-pointer"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded text-xs font-bold cursor-pointer"
               >
-                Close
+                Done
               </button>
             </div>
           </div>

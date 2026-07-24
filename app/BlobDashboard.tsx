@@ -256,7 +256,9 @@ export default function BlobDashboard({
             } else {
               const errData = await fetchRes.json().catch(() => ({ error: "Unknown error" })) as { error?: string };
               console.error("Autosave failed:", errData.error);
-              showToast("error", `Autosave failed: ${errData.error || "Unknown error"}`);
+              if (fetchRes.status !== 401) {
+                showToast("error", `Autosave failed: ${errData.error || "Unknown error"}`);
+              }
             }
           } else {
             // Create new blob (Register & Redirect)
@@ -278,7 +280,9 @@ export default function BlobDashboard({
             } else {
               const errData = await fetchRes.json().catch(() => ({ error: "Unknown error" })) as { error?: string };
               console.error("Autosave creation failed:", errData.error);
-              showToast("error", `Autosave failed: ${errData.error || "Unknown error"}`);
+              if (fetchRes.status !== 401) {
+                showToast("error", `Autosave failed: ${errData.error || "Unknown error"}`);
+              }
             }
           }
         } catch (err: any) {
@@ -347,6 +351,50 @@ export default function BlobDashboard({
     setActiveView("workspace");
     router.push("/");
     showToast("info", "Created new blank workspace");
+  };
+
+  // --- Handle Create Blob From Content (API / SQL / Conversion) ---
+  const handleCreateBlobFromContent = async (titleVal: string, contentVal: string) => {
+    try {
+      showToast("info", "Saving response as workspace blob...");
+      const fetchRes = await fetch("/api/blobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: titleVal, content: contentVal }),
+      });
+
+      if (fetchRes.ok) {
+        const newBlob = (await fetchRes.json()) as Blob;
+        showToast("success", `Saved workspace blob: "${newBlob.title}"`);
+        addActivity("blob_create", `Created Blob: ${newBlob.title}`);
+
+        const listRes = await fetch("/api/blobs");
+        if (listRes.ok) {
+          const updatedList = (await listRes.json()) as Blob[];
+          setBlobsList(updatedList);
+        }
+
+        setSelectedBlob(newBlob);
+        setTitle(newBlob.title);
+        setContent(newBlob.content);
+        setActiveView("workspace");
+        router.push(`/${newBlob.id}`);
+      } else {
+        // Fallback: set in editor directly
+        setSelectedBlob(null);
+        setTitle(titleVal);
+        setContent(contentVal);
+        setActiveView("workspace");
+        router.push("/");
+        showToast("success", `Loaded into workspace: "${titleVal}"`);
+      }
+    } catch (err) {
+      setSelectedBlob(null);
+      setTitle(titleVal);
+      setContent(contentVal);
+      setActiveView("workspace");
+      router.push("/");
+    }
   };
 
   // --- Handle Clear Workspace ---
@@ -1251,10 +1299,7 @@ export default function BlobDashboard({
             isDark={isDark}
             userName={userName}
             onSaveAsBlob={(titleVal, contentVal) => {
-              handleNewBlob();
-              setTitle(titleVal);
-              setContent(contentVal);
-              setActiveView("workspace");
+              handleCreateBlobFromContent(titleVal, contentVal);
             }}
           />
           <AiAssistantPanel
@@ -1284,10 +1329,7 @@ export default function BlobDashboard({
           <ApiStudioView
             isDark={isDark}
             onSaveAsBlob={(titleVal, contentVal) => {
-              handleNewBlob();
-              setTitle(titleVal);
-              setContent(contentVal);
-              setActiveView("workspace");
+              handleCreateBlobFromContent(titleVal, contentVal);
             }}
           />
           <AiAssistantPanel
@@ -1318,15 +1360,10 @@ export default function BlobDashboard({
           <ConversionView
             isDark={isDark}
             onLoadIntoEditor={(convertedText) => {
-              handleNewBlob();
-              setContent(convertedText);
-              setActiveView("workspace");
+              handleCreateBlobFromContent("Converted Workspace Blob", convertedText);
             }}
             onSaveAsBlob={(titleVal, contentVal) => {
-              handleNewBlob();
-              setTitle(titleVal);
-              setContent(contentVal);
-              setActiveView("workspace");
+              handleCreateBlobFromContent(titleVal, contentVal);
             }}
           />
           <AiAssistantPanel
