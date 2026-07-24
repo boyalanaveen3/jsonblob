@@ -124,7 +124,7 @@ export default function BlobDashboard({
 
   // UI states
   const [search, setSearch] = useState("");
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(true);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [copied, setCopied] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -174,8 +174,15 @@ export default function BlobDashboard({
 
   // --- Initial Theme Sync ---
   useEffect(() => {
-    const isDarkClass = document.documentElement.classList.contains("dark");
-    setIsDark(isDarkClass);
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme === "light") {
+      document.documentElement.classList.remove("dark");
+      setIsDark(false);
+    } else {
+      document.documentElement.classList.add("dark");
+      localStorage.theme = "dark";
+      setIsDark(true);
+    }
   }, []);
 
   const toggleTheme = () => {

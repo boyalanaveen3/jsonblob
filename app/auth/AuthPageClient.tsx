@@ -38,7 +38,7 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
 
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(true);
   const [loading, setLoading] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -52,8 +52,15 @@ export default function AuthPage() {
   }, []);
 
   useEffect(() => {
-    const isDarkClass = document.documentElement.classList.contains("dark");
-    setIsDark(isDarkClass);
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme === "light") {
+      document.documentElement.classList.remove("dark");
+      setIsDark(false);
+    } else {
+      document.documentElement.classList.add("dark");
+      localStorage.theme = "dark";
+      setIsDark(true);
+    }
   }, []);
 
   const toggleTheme = () => {
