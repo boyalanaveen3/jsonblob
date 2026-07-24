@@ -610,158 +610,198 @@ export default function BlobDashboard({
       )}
 
       {/* ================= THIN ACTIVITY BAR (IDE SIDEBAR) ================= */}
-      <aside className="w-16 bg-card border-r border-border flex flex-col justify-between items-center py-4 shrink-0 z-50 select-none">
-        {/* Top Part: Logo & Navigation */}
-        <div className="flex flex-col items-center gap-6 w-full">
-          {/* Logo */}
-          <button
-            onClick={() => {
-              setSelectedBlob(null);
-              router.push("/");
-              setActiveView("dashboard");
-            }}
-            className="relative flex items-center justify-center w-9 h-9 rounded-lg bg-gradient-to-tr from-primary to-indigo-600 shadow-md shadow-primary/20 text-primary-foreground font-extrabold text-xs tracking-tighter cursor-pointer hover:scale-105 transition-transform"
-            title="JSONBlob Dashboard"
-          >
-            {"{"}
-            <span className="text-[9px] text-primary-foreground/90 absolute mt-0.5 font-semibold">JS</span>
-            {"}"}
-          </button>
+      {/* Outer wrapper that transitions width on hover on desktop to push adjacent content to the right */}
+      <div className="w-16 md:hover:w-[240px] h-full shrink-0 z-50 select-none relative group/sidebar transition-[width] duration-300 ease-in-out">
+        <aside className="w-full h-full bg-card border-r border-border flex flex-col justify-between items-stretch py-4 overflow-hidden">
+          {/* Top Part: Logo & Navigation */}
+          <div className="flex flex-col items-stretch gap-6 w-full">
+            {/* Logo Container - Placed at pl-[14px] to perfectly center the w-9 (36px) logo button within 64px collapsed width */}
+            <div className="w-full pl-[14px] flex items-center justify-start gap-3">
+              {/* Logo */}
+              <button
+                onClick={() => {
+                  setSelectedBlob(null);
+                  router.push("/");
+                  setActiveView("dashboard");
+                }}
+                className="relative flex items-center justify-center w-9 h-9 rounded-lg bg-gradient-to-tr from-primary to-indigo-600 shadow-md shadow-primary/20 text-primary-foreground font-extrabold text-xs tracking-tighter cursor-pointer hover:scale-105 transition-transform shrink-0"
+                title="JSONBlob Dashboard"
+              >
+                {"{"}
+                <span className="text-[9px] text-primary-foreground/90 absolute mt-0.5 font-semibold">JS</span>
+                {"}"}
+              </button>
+              {/* App Title - Fades in smoothly after the sidebar begins expanding */}
+              <span className="font-bold text-sm tracking-tight text-foreground hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                JSON<span className="text-primary">Blob</span>
+              </span>
+            </div>
 
-          {/* Navigation Items */}
-          <nav className="flex flex-col items-center gap-1 w-full">
-            {/* Dashboard Link */}
+            {/* Navigation Items */}
+            <nav className="flex flex-col items-stretch gap-1 w-full">
+              {/* Dashboard Link - pl-[20px] centers the w-5 (20px) icon with the border-l-2 (2px) in 64px collapsed width */}
+              <button
+                onClick={() => setActiveView("dashboard")}
+                title="Dashboard"
+                className={`w-full py-3 flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer relative border-l-2 ${
+                  activeView === "dashboard"
+                    ? "bg-primary/10 text-primary border-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+                }`}
+              >
+                <Layout className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                  Dashboard
+                </span>
+              </button>
+
+              {/* Workspace Link */}
+              <button
+                onClick={() => {
+                  setActiveView("workspace");
+                  // If clicked while already in workspace view, toggle collapse of explorer sidebar
+                  if (activeView === "workspace") {
+                    setSidebarCollapsed(!isSidebarCollapsed);
+                  } else {
+                    setSidebarCollapsed(false);
+                  }
+                }}
+                title="Workspace (JSON Editor)"
+                className={`w-full py-3 flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer relative border-l-2 ${
+                  activeView === "workspace"
+                    ? "bg-primary/10 text-primary border-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+                }`}
+              >
+                <FileJson className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                  JSON Editor
+                </span>
+              </button>
+
+              {/* SQL Workspace Link */}
+              <button
+                onClick={() => setActiveView("sql")}
+                title="SQL Workspace"
+                className={`w-full py-3 flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer relative border-l-2 ${
+                  activeView === "sql"
+                    ? "bg-primary/10 text-primary border-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+                }`}
+              >
+                <Database className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                  SQL Workspace
+                </span>
+              </button>
+
+              {/* API Studio Link */}
+              <button
+                onClick={() => setActiveView("api")}
+                title="API Studio"
+                className={`w-full py-3 flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer relative border-l-2 ${
+                  activeView === "api"
+                    ? "bg-primary/10 text-primary border-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+                }`}
+              >
+                <Send className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                  API Studio
+                </span>
+              </button>
+
+              {/* Collections Link */}
+              <button
+                onClick={() => setActiveView("collections")}
+                title="Collections"
+                className={`w-full py-3 flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer relative border-l-2 ${
+                  activeView === "collections"
+                    ? "bg-primary/10 text-primary border-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+                }`}
+              >
+                <Layers className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                  Collections
+                </span>
+              </button>
+
+              {/* Format Converter Link */}
+              <button
+                onClick={() => setActiveView("conversion")}
+                title="Format Converter"
+                className={`w-full py-3 flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer relative border-l-2 ${
+                  activeView === "conversion"
+                    ? "bg-primary/10 text-primary border-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+                }`}
+              >
+                <ArrowLeftRight className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                  Format Converter
+                </span>
+              </button>
+
+              {/* Settings Link */}
+              <button
+                onClick={() => setActiveView("settings")}
+                title="Settings"
+                className={`w-full py-3 flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer relative border-l-2 ${
+                  activeView === "settings"
+                    ? "bg-primary/10 text-primary border-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+                }`}
+              >
+                <SettingsIcon className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                  Settings
+                </span>
+              </button>
+            </nav>
+          </div>
+
+          {/* Bottom Part: Direct Logout & Theme toggle */}
+          <div className="flex flex-col items-stretch gap-2 w-full">
+            {/* Theme Switch */}
             <button
-              onClick={() => setActiveView("dashboard")}
-              title="Dashboard"
-              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
-                activeView === "dashboard"
-                  ? "bg-primary/10 text-primary border-primary"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
-              }`}
+              onClick={toggleTheme}
+              title="Toggle Theme"
+              className="w-full py-3 hover:bg-accent text-muted-foreground hover:text-foreground flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer border-l-2 border-transparent"
             >
-              <Layout className="w-5 h-5" />
+              {isDark ? <Sun className="w-5 h-5 shrink-0" /> : <Moon className="w-5 h-5 shrink-0" />}
+              <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                {isDark ? "Light Mode" : "Dark Mode"}
+              </span>
             </button>
 
-            {/* Workspace Link */}
-            <button
-              onClick={() => {
-                setActiveView("workspace");
-                // If clicked while already in workspace view, toggle collapse of explorer sidebar
-                if (activeView === "workspace") {
-                  setSidebarCollapsed(!isSidebarCollapsed);
-                } else {
-                  setSidebarCollapsed(false);
-                }
-              }}
-              title="Workspace (JSON Editor)"
-              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
-                activeView === "workspace"
-                  ? "bg-primary/10 text-primary border-primary"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
-              }`}
-            >
-              <FileJson className="w-5 h-5" />
-            </button>
-
-            {/* SQL Workspace Link */}
-            <button
-              onClick={() => setActiveView("sql")}
-              title="SQL Workspace"
-              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
-                activeView === "sql"
-                  ? "bg-primary/10 text-primary border-primary"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
-              }`}
-            >
-              <Database className="w-5 h-5" />
-            </button>
-
-            {/* API Studio Link */}
-            <button
-              onClick={() => setActiveView("api")}
-              title="API Studio"
-              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
-                activeView === "api"
-                  ? "bg-primary/10 text-primary border-primary"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
-              }`}
-            >
-              <Send className="w-5 h-5" />
-            </button>
-
-            {/* Collections Link */}
-            <button
-              onClick={() => setActiveView("collections")}
-              title="Collections"
-              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
-                activeView === "collections"
-                  ? "bg-primary/10 text-primary border-primary"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
-              }`}
-            >
-              <Layers className="w-5 h-5" />
-            </button>
-
-            {/* Format Converter Link */}
-            <button
-              onClick={() => setActiveView("conversion")}
-              title="Format Converter"
-              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
-                activeView === "conversion"
-                  ? "bg-primary/10 text-primary border-primary"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
-              }`}
-            >
-              <ArrowLeftRight className="w-5 h-5" />
-            </button>
-
-            {/* Settings Link */}
-            <button
-              onClick={() => setActiveView("settings")}
-              title="Settings"
-              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
-                activeView === "settings"
-                  ? "bg-primary/10 text-primary border-primary"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
-              }`}
-            >
-              <SettingsIcon className="w-5 h-5" />
-            </button>
-          </nav>
-        </div>
-
-        {/* Bottom Part: Direct Logout & Theme toggle */}
-        <div className="flex flex-col items-center gap-2 w-full">
-          {/* Theme Switch */}
-          <button
-            onClick={toggleTheme}
-            title="Toggle Theme"
-            className="w-full py-3 hover:bg-accent text-muted-foreground hover:text-foreground flex items-center justify-center transition-all cursor-pointer border-l-2 border-transparent"
-          >
-            {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
-
-          {/* User Sign Out / Sign In direct button */}
-          {userName ? (
-            <button
-              onClick={handleSignOut}
-              title={`Sign Out (${userName})`}
-              className="w-full py-3 text-red-500 hover:text-red-600 hover:bg-red-500/10 flex items-center justify-center transition-all cursor-pointer border-l-2 border-transparent"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
-          ) : (
-            <a
-              href="/auth"
-              title="Sign In / Register"
-              className="w-full py-3 text-muted-foreground hover:text-foreground hover:bg-accent flex items-center justify-center transition-all cursor-pointer border-l-2 border-transparent"
-            >
-              <User className="w-5 h-5" />
-            </a>
-          )}
-        </div>
-      </aside>
+            {/* User Sign Out / Sign In direct button */}
+            {userName ? (
+              <button
+                onClick={handleSignOut}
+                title={`Sign Out (${userName})`}
+                className="w-full py-3 text-red-500 hover:text-red-600 hover:bg-red-500/10 flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer border-l-2 border-transparent"
+              >
+                <LogOut className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                  Sign Out
+                </span>
+              </button>
+            ) : (
+              <a
+                href="/auth"
+                title="Sign In / Register"
+                className="w-full py-3 text-muted-foreground hover:text-foreground hover:bg-accent flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer border-l-2 border-transparent"
+              >
+                <User className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                  Sign In
+                </span>
+              </a>
+            )}
+          </div>
+        </aside>
+      </div>
 
       {/* ================= SECONDARY FILE EXPLORER SIDE PANEL ================= */}
       {activeView === "workspace" && !isSidebarCollapsed && (
