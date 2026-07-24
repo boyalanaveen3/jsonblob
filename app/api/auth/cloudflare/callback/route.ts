@@ -28,12 +28,12 @@ export async function GET(request: Request) {
   try {
     const clientId = process.env.CLOUDFLARE_CLIENT_ID;
     const clientSecret = process.env.CLOUDFLARE_CLIENT_SECRET;
-    const callbackUrl = process.env.CLOUDFLARE_REDIRECT_URI || `${origin}/api/auth/cloudflare/callback`;
+    // Always use the current request origin so OAuth works on UAT, preview, and production
+    const callbackUrl = `${origin}/api/auth/cloudflare/callback`;
 
     if (!clientId || !clientSecret) {
-      // Missing secrets — fail visibly to avoid silent fake auth
-      console.error("Cloudflare OAuth missing client credentials");
-      return NextResponse.redirect(new URL("/auth?provider=cloudflare-d1&error=oauth_config", origin));
+      console.error("Cloudflare OAuth missing client credentials — clientId:", !!clientId, "clientSecret:", !!clientSecret);
+      return NextResponse.redirect(new URL("/auth?provider=cloudflare-d1&error=oauth_config&reason=missing_secret", origin));
     }
 
     const tokenRes = await fetch("https://dash.cloudflare.com/oauth2/token", {
@@ -47,13 +47,12 @@ export async function GET(request: Request) {
         redirect_uri: callbackUrl,
       }),
     });
-    if (process.env.NODE_ENV === "development") {
-      console.log("[Cloudflare OAuth] token exchange redirect_uri:", callbackUrl);
-    }
+    console.log("[Cloudflare OAuth] token exchange redirect_uri:", callbackUrl, "status:", tokenRes.status);
 
     if (!tokenRes.ok) {
-      console.error("Cloudflare token exchange failed", await tokenRes.text());
-      return NextResponse.redirect(new URL("/auth?provider=cloudflare-d1&error=oauth_failed", origin));
+      const errBody = await tokenRes.text();
+      console.error("Cloudflare token exchange failed", tokenRes.status, errBody);
+      return NextResponse.redirect(new URL(`/auth?provider=cloudflare-d1&error=oauth_failed&reason=token_exchange_${tokenRes.status}`, origin));
     }
 
     const tokenData: any = await tokenRes.json();
@@ -61,7 +60,7 @@ export async function GET(request: Request) {
 
     if (!accessToken) {
       console.error("Cloudflare token response missing access_token", tokenData);
-      return NextResponse.redirect(new URL("/auth?provider=cloudflare-d1&error=oauth_failed", origin));
+      return NextResponse.redirect(new URL("/auth?provider=cloudflare-d1&error=oauth_failed&reason=no_access_token", origin));
     }
 
     // Optionally verify by fetching accounts (does not expose token to client)

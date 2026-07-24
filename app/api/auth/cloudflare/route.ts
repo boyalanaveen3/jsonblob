@@ -7,7 +7,8 @@ export async function GET(request: Request) {
   const redirectUrl = searchParams.get("redirect") || "/?view=sql&provider=cloudflare-d1";
   const state = Buffer.from(JSON.stringify({ redirectUrl, timestamp: Date.now() })).toString("base64url");
 
-  const callbackUrl = process.env.CLOUDFLARE_REDIRECT_URI || `${origin}/api/auth/cloudflare/callback`;
+  // Always derive the callback URL from the request origin so UAT/preview/production all work
+  const callbackUrl = `${origin}/api/auth/cloudflare/callback`;
   const clientId = process.env.CLOUDFLARE_CLIENT_ID;
 
   if (!clientId) {
@@ -18,9 +19,7 @@ export async function GET(request: Request) {
   const authUrl = `https://dash.cloudflare.com/oauth2/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=${encodeURIComponent("account:read d1:read d1:write")}&state=${encodeURIComponent(state)}`;
 
   const normalizedAuthUrl = authUrl.replaceAll("+", "%20");
-  if (process.env.NODE_ENV === "development") {
-    console.log("[Cloudflare OAuth] auth URL:", normalizedAuthUrl);
-  }
+  console.log("[Cloudflare OAuth] auth URL:", normalizedAuthUrl);
   // Redirect directly to Cloudflare login & authorization page
   return NextResponse.redirect(normalizedAuthUrl);
 }

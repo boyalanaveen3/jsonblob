@@ -36,59 +36,36 @@ export class CloudflareService {
    * Fetch Cloudflare Accounts for the authenticated user
    */
   async getAccounts(token: string): Promise<CloudflareAccount[]> {
-    try {
-      const res = await fetch(`${this.baseUrl}/accounts`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (!res.ok) {
-        throw new Error(`Failed to fetch accounts: ${res.statusText}`);
-      }
-      const data: any = await res.json();
-      return data.result || [];
-    } catch (err: any) {
-      console.warn("Cloudflare API getAccounts fallback:", err.message);
-      return [{ id: "acc-cf-live-01", name: "Cloudflare Developer Account" }];
+    const res = await fetch(`${this.baseUrl}/accounts`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Failed to fetch Cloudflare accounts (${res.status}): ${body}`);
     }
+    const data: any = await res.json();
+    return data.result || [];
   }
 
   /**
    * Fetch D1 Databases for a specific Cloudflare Account ID
    */
   async getD1Databases(accountId: string, token: string): Promise<CloudflareD1Database[]> {
-    try {
-      const res = await fetch(`${this.baseUrl}/accounts/${accountId}/d1/database`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (!res.ok) {
-        throw new Error(`Failed to fetch D1 databases: ${res.statusText}`);
-      }
-      const data: any = await res.json();
-      return data.result || [];
-    } catch (err: any) {
-      console.warn("Cloudflare API getD1Databases fallback:", err.message);
-      return [
-        {
-          uuid: "1ad3573e-3f03-1906-8599-0b56d06cdc0f",
-          name: "jsonblob-db",
-          created_at: new Date().toISOString(),
-          version: "SQLite 3.45.1 (Cloudflare D1)",
-          num_tables: 5,
-        },
-        {
-          uuid: "9001-d1-prod-uuid",
-          name: "production-db",
-          created_at: new Date().toISOString(),
-          version: "SQLite 3.45.1 (Cloudflare D1)",
-          num_tables: 2,
-        },
-      ];
+    const res = await fetch(`${this.baseUrl}/accounts/${accountId}/d1/database`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Failed to fetch D1 databases (${res.status}): ${body}`);
     }
+    const data: any = await res.json();
+    return data.result || [];
   }
 
   /**

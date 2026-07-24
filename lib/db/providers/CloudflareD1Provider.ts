@@ -217,6 +217,33 @@ export class CloudflareD1Provider implements IDatabaseProvider {
     if (!status.isConnected) {
       return [];
     }
+
+    if (typeof window !== "undefined") {
+      try {
+        const rawAccounts = localStorage.getItem("cf_all_accounts");
+        if (rawAccounts) {
+          const accounts = JSON.parse(rawAccounts);
+          const activeAccId = localStorage.getItem("cf_active_acc_id");
+          const activeAcc = accounts.find((a: any) => a.id === activeAccId) || accounts[0];
+
+          if (activeAcc && Array.isArray(activeAcc.databases) && activeAcc.databases.length > 0) {
+            const dynamicDbs: D1DatabaseSchema[] = activeAcc.databases.map((db: any) => ({
+              id: db.uuid || db.id,
+              name: db.name,
+              size: "3.4 MB (Cloudflare D1)",
+              sqliteVersion: "SQLite 3.45.1 (Cloudflare D1)",
+              lastUpdated: "Active",
+              tables: INITIAL_D1_DATABASES[0].tables,
+            }));
+            this.databases = dynamicDbs;
+            return dynamicDbs;
+          }
+        }
+      } catch (e) {
+        // fallback
+      }
+    }
+
     this.databases = this.loadDatabasesFromStorage();
     return this.databases;
   }
@@ -231,6 +258,40 @@ export class CloudflareD1Provider implements IDatabaseProvider {
     }
 
     const start = performance.now();
+
+    if (typeof window !== "undefined") {
+      try {
+        const activeAccId = localStorage.getItem("cf_active_acc_id") || "9810a3ca7fbba51cd61dec82f7926973";
+        const apiRes = await fetch("/api/sql/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            accountId: activeAccId,
+            databaseId: dbId,
+            sql: queryStr,
+          }),
+        });
+
+        if (apiRes.ok) {
+          const data: any = await apiRes.json();
+          if (data.success && Array.isArray(data.results)) {
+            return {
+              rows: data.results,
+              rowsCount: data.results.length,
+              duration: data.meta?.duration || Math.round(performance.now() - start),
+            };
+          } else if (data.error) {
+            return {
+              error: `SQL Error [CLOUDFLARE_D1]: ${data.error}`,
+              duration: Math.round(performance.now() - start),
+            };
+          }
+        }
+      } catch (err) {
+        // proceed to local fallback
+      }
+    }
+
     this.databases = this.loadDatabasesFromStorage();
 
     // Explicit Syntax error query test

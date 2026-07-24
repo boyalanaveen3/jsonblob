@@ -11,5 +11,10 @@
   "compatibility_date": "2026-07-14",
   "compatibility_flags": [
     "nodejs_compat"
-  ]
+  ],
+  "vars": {
+    "CLOUDFLARE_CLIENT_ID": "1cc954f25945e1e46bf4a5ac1d268cc3",
+    "CLOUDFLARE_REDIRECT_URI": "https://jsonblob-app.pages.dev/api/auth/cloudflare/callback",
+    "NEXT_PUBLIC_APP_URL": "https://jsonblob-app.pages.dev/"
+  }
 }

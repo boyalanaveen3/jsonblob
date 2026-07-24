@@ -18,10 +18,17 @@ export async function POST(request: Request) {
 
     const cookieStore = await cookies();
     const tokenCookie = cookieStore.get("cf_d1_access_token");
-    const token = tokenCookie?.value || "live_cf_d1_token";
 
+    if (!tokenCookie?.value) {
+      return NextResponse.json(
+        { success: false, error: "Not authenticated. Please connect your Cloudflare account first." },
+        { status: 401 }
+      );
+    }
+
+    const token = tokenCookie.value;
     const targetAccountId = accountId || "9810a3ca7fbba51cd61dec82f7926973";
-    const targetDbId = databaseId || "1ad3573e-3f03-1906-8599-0b56d06cdc0f";
+    const targetDbId = databaseId || "1ad3573e-3f03-4906-8599-0b66d06cdc0f";
 
     const response = await cloudflareService.executeQuery(targetAccountId, targetDbId, sql, token);
 
@@ -31,6 +38,13 @@ export async function POST(request: Request) {
         results: response.results[0]?.results || [],
         meta: response.results[0]?.meta || { duration: 12 },
       });
+    }
+
+    if (response.errors && response.errors.length > 0) {
+      return NextResponse.json(
+        { success: false, error: response.errors.map((e) => e.message).join("; ") },
+        { status: 400 }
+      );
     }
 
     return NextResponse.json({

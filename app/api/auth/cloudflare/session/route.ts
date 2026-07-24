@@ -16,10 +16,15 @@ export async function GET() {
     const token = tokenCookie.value;
     const accounts = await cloudflareService.getAccounts(token);
 
-    // For convenience fetch D1 databases for first account (non-sensitive)
+    // Fetch D1 databases for each account associated with the access token
     const accountData = Array.isArray(accounts) && accounts.length > 0 ? await Promise.all(accounts.map(async (a: any) => {
-      const dbs = await cloudflareService.getD1Databases(a.id, token);
-      return { id: a.id, name: a.name, databases: dbs };
+      try {
+        const dbs = await cloudflareService.getD1Databases(a.id, token);
+        return { id: a.id, name: a.name, databases: dbs || [] };
+      } catch (err) {
+        console.warn(`Could not fetch D1 databases for account ${a.id}:`, err);
+        return { id: a.id, name: a.name, databases: [] };
+      }
     })) : [];
 
     return NextResponse.json({ isConnected: true, accounts: accountData });

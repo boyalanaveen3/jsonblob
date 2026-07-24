@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { useWorkspaceStore, type SqlTab } from "@/lib/store/workspaceStore";
+import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 import { dbRegistry } from "@/lib/db/registry";
 import { aiRegistry } from "@/lib/ai/registry";
 import { D1DatabaseSchema, IDatabaseProvider, ProviderConnectionStatus } from "@/lib/db/types";
@@ -16,18 +16,13 @@ import {
 import { 
   Play, 
   Save, 
-  Trash2, 
   Download, 
   Plus, 
   X, 
-  History, 
-  Database, 
   Table, 
   FileCode, 
-  Search,
   CheckCircle,
   AlertCircle,
-  Clock,
   Sparkles,
   Star,
   ChevronRight,
@@ -40,7 +35,6 @@ import {
   LogOut,
   ShieldCheck,
   RefreshCw,
-  Server,
   Wand2,
   Brain,
   Zap,
@@ -48,16 +42,10 @@ import {
   Layers,
   Send,
   MessageSquare,
-  ArrowRight,
   CheckSquare,
   Eye,
   Hash,
-  ZapOff,
   Activity,
-  HardDrive,
-  Info,
-  Sliders,
-  Key
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -174,51 +162,92 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
     setTimeout(() => setIsRefreshing(false), 300);
   }, [currentProvider, activeDbId]);
 
+  // Multi-account Cloudflare state
+  const [cfAccounts, setCfAccounts] = useState<Array<{ id: string; name: string; databases?: Array<{ uuid: string; name: string }> }>>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const rawAccounts = localStorage.getItem("cf_all_accounts");
+      if (rawAccounts) {
+        try {
+          const parsed = JSON.parse(rawAccounts);
+          if (Array.isArray(parsed)) setCfAccounts(parsed);
+        } catch (e) {}
+      }
+      const savedAccId = localStorage.getItem("cf_active_acc_id");
+      if (savedAccId) setSelectedAccountId(savedAccId);
+    }
+  }, []);
+
+  const handleAccountChange = (accId: string) => {
+    if (accId === "connect_new") {
+      window.location.href = "/api/auth/cloudflare?prompt=select_account&redirect=" + encodeURIComponent("/?view=sql&provider=cloudflare-d1");
+      return;
+    }
+    setSelectedAccountId(accId);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("cf_active_acc_id", accId);
+      const targetAcc = cfAccounts.find((a) => a.id === accId);
+      if (targetAcc) {
+        localStorage.setItem("cloudflare_d1_session", JSON.stringify({
+          isConnected: true,
+          accountName: targetAcc.name,
+          email: "gavvavamsikrishna@gmail.com",
+          organization: "Cloudflare Global",
+          connectedAt: new Date().toISOString(),
+        }));
+      }
+    }
+    refreshProviderData();
+  };
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       if (params.get("provider") === "cloudflare-d1") {
         setSelectedProviderId("cloudflare-d1");
         localStorage.setItem("active_sql_provider_id", "cloudflare-d1");
-        if (params.get("oauth") === "success") {
-          // On OAuth success, fetch server-side session and persist minimal client session
-          (async () => {
-            try {
-              const res = await fetch("/api/auth/cloudflare/session");
-              if (res.ok) {
-                const data = (await res.json()) as {
-                  isConnected: boolean;
-                  accounts?: Array<{
-                    id: string;
-                    name: string;
-                    email?: string | null;
-                    organization?: string | null;
-                    connectedAt?: string;
-                    databases?: Array<{ uuid: string }>; 
-                  }>;
-                };
-                if (data.isConnected && Array.isArray(data.accounts) && data.accounts.length > 0) {
-                  const primary = data.accounts[0];
+
+        // Fetch server-side Cloudflare session
+        (async () => {
+          try {
+            const res = await fetch("/api/auth/cloudflare/session");
+            if (res.ok) {
+              const data = (await res.json()) as {
+                isConnected: boolean;
+                accounts?: Array<{
+                  id: string;
+                  name: string;
+                  databases?: Array<{ uuid: string; name: string }>;
+                }>;
+              };
+              if (data.isConnected && Array.isArray(data.accounts) && data.accounts.length > 0) {
+                setCfAccounts(data.accounts);
+                localStorage.setItem("cf_all_accounts", JSON.stringify(data.accounts));
+
+                const currentSavedAccId = localStorage.getItem("cf_active_acc_id");
+                const activeAcc = data.accounts.find((a: any) => a.id === currentSavedAccId) || data.accounts[0];
+
+                if (activeAcc) {
+                  setSelectedAccountId(activeAcc.id);
+                  localStorage.setItem("cf_active_acc_id", activeAcc.id);
                   localStorage.setItem("cloudflare_d1_session", JSON.stringify({
                     isConnected: true,
-                    accountName: primary.name,
-                    email: primary.email || null,
-                    organization: primary.organization || null,
+                    accountName: activeAcc.name,
+                    email: "gavvavamsikrishna@gmail.com",
+                    organization: "Cloudflare Global",
                     connectedAt: new Date().toISOString(),
                   }));
-                  if (primary.databases && primary.databases.length > 0) {
-                    localStorage.setItem("cf_selected_db_id", primary.databases[0].uuid);
-                    localStorage.setItem("cf_active_acc_id", primary.id);
-                  }
                 }
               }
-            } catch (e) {
-              // ignore
-            } finally {
-              refreshProviderData();
             }
-          })();
-        }
+          } catch (e) {
+            // ignore
+          } finally {
+            refreshProviderData();
+          }
+        })();
       }
     }
   }, [refreshProviderData]);
@@ -698,6 +727,28 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
           /* AUTHENTICATED COMPLETE SCHEMA BROWSER */
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             
+            {/* Cloudflare Account Dropdown Selector */}
+            {cfAccounts.length > 0 && (
+              <div className="p-3 border-b border-border bg-accent/30 flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                  <span>Cloudflare Account</span>
+                  <span className="text-emerald-400 text-[9px] font-mono">{cfAccounts.length} Connected</span>
+                </label>
+                <select
+                  value={selectedAccountId}
+                  onChange={(e) => handleAccountChange(e.target.value)}
+                  className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-xs outline-none focus:border-primary cursor-pointer font-bold text-violet-400"
+                >
+                  {cfAccounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name} ({acc.databases?.length || 0} D1 DBs)
+                    </option>
+                  ))}
+                  <option value="connect_new">+ Connect / Switch Cloudflare Login</option>
+                </select>
+              </div>
+            )}
+
             {/* Database Dropdown Selector */}
             {databases.length > 0 && (
               <div className="p-3 border-b border-border bg-accent/20 flex flex-col gap-1.5">

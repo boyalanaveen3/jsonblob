@@ -26,6 +26,9 @@ pnpm-debug.log*
 # local env files
 .env*.local
 
+# wrangler local secrets
+.dev.vars
+
 # vercel
 .vercel
 
