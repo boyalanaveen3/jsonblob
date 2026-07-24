@@ -38,7 +38,7 @@ import { JsonTreeView } from "@/components/editor/JsonTreeView";
 import { JsonSchemaValidator } from "@/components/editor/JsonSchemaValidator";
 import { useAiStore } from "@/lib/store/aiStore";
 import { AiAssistantPanel } from "@/components/editor/AiAssistantPanel";
-import { useWorkspaceStore } from "@/lib/store/workspaceStore";
+import { useWorkspaceStore, type ViewType } from "@/lib/store/workspaceStore";
 import { DashboardView } from "@/components/editor/DashboardView";
 import { SqlEditorView } from "@/components/editor/SqlEditorView";
 import { ApiStudioView } from "@/components/editor/ApiStudioView";
@@ -71,6 +71,7 @@ interface BlobDashboardProps {
   initialBlobs: Blob[];
   initialSelectedBlob?: Blob | null;
   initialUserName?: string | null;
+  defaultView?: ViewType;
 }
 
 interface Toast {
@@ -105,6 +106,7 @@ export default function BlobDashboard({
   initialBlobs,
   initialSelectedBlob,
   initialUserName,
+  defaultView,
 }: BlobDashboardProps) {
   const router = useRouter();
   // --- Workspace Store States ---
@@ -150,6 +152,19 @@ export default function BlobDashboard({
       setUserName(stored);
     }
   }, [userName]);
+
+  // Enforce initial and auth-based views
+  useEffect(() => {
+    if (defaultView) {
+      setActiveView(defaultView);
+    }
+  }, [defaultView, setActiveView]);
+
+  useEffect(() => {
+    if (!userName && activeView === "dashboard") {
+      setActiveView("workspace");
+    }
+  }, [userName, activeView, setActiveView]);
 
   // Transitions for async operations
   const [isPending, startTransition] = useTransition();
@@ -695,20 +710,22 @@ export default function BlobDashboard({
             {/* Navigation Items */}
             <nav className="flex flex-col items-stretch gap-1 w-full">
               {/* Dashboard Link - pl-[20px] centers the w-5 (20px) icon with the border-l-2 (2px) in 64px collapsed width */}
-              <button
-                onClick={() => setActiveView("dashboard")}
-                title="Dashboard"
-                className={`w-full py-3 flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer relative border-l-2 ${
-                  activeView === "dashboard"
-                    ? "bg-primary/10 text-primary border-primary"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
-                }`}
-              >
-                <Layout className="w-5 h-5 shrink-0" />
-                <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
-                  Dashboard
-                </span>
-              </button>
+              {userName && (
+                <button
+                  onClick={() => setActiveView("dashboard")}
+                  title="Dashboard"
+                  className={`w-full py-3 flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer relative border-l-2 ${
+                    activeView === "dashboard"
+                      ? "bg-primary/10 text-primary border-primary"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+                  }`}
+                >
+                  <Layout className="w-5 h-5 shrink-0" />
+                  <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                    Dashboard
+                  </span>
+                </button>
+              )}
 
               {/* Workspace Link */}
               <button

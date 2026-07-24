@@ -124,7 +124,7 @@ export default function AuthPage() {
             text: `Welcome back, ${res.user.name}! Redirecting...`,
           });
           setTimeout(() => {
-            router.push("/");
+            router.push("/dashboard");
           }, 1200);
         } else {
           setMessage({ type: "error", text: res.error || "Failed to sign in" });
@@ -140,7 +140,7 @@ export default function AuthPage() {
             text: "Account created successfully! Redirecting...",
           });
           setTimeout(() => {
-            router.push("/");
+            router.push("/dashboard");
           }, 1200);
         } else {
           setMessage({ type: "error", text: res.error || "Failed to register" });

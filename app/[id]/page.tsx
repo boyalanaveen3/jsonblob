@@ -21,6 +21,7 @@ export default async function Page({ params }: PageProps) {
       initialBlobs={initialBlobs}
       initialSelectedBlob={selectedBlob}
       initialUserName={initialUserName}
+      defaultView="workspace"
     />
   );
 }

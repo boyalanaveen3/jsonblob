@@ -12,5 +12,5 @@ export default async function Page() {
   const cookieStore = await cookies();
   const initialUserName = cookieStore.get("userName")?.value || null;
 
-  return <BlobDashboard initialBlobs={initialBlobs} initialUserName={initialUserName} />;
+  return <BlobDashboard initialBlobs={initialBlobs} initialUserName={initialUserName} defaultView="workspace" />;
 }
