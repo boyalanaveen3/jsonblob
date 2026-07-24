@@ -23,13 +23,28 @@ import {
   Menu,
   Sparkles,
   Code,
+  Layout,
+  Layers,
+  Database,
+  Send,
+  Settings as SettingsIcon,
+  User,
+  ArrowLeftRight,
+  LogOut,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { JsonTreeView } from "@/components/editor/JsonTreeView";
+import { JsonSchemaValidator } from "@/components/editor/JsonSchemaValidator";
 import { useAiStore } from "@/lib/store/aiStore";
 import { AiAssistantPanel } from "@/components/editor/AiAssistantPanel";
-import { ApiClientGeneratorModal } from "@/components/editor/ApiClientGeneratorModal";
+import { useWorkspaceStore } from "@/lib/store/workspaceStore";
+import { DashboardView } from "@/components/editor/DashboardView";
+import { SqlEditorView } from "@/components/editor/SqlEditorView";
+import { ApiStudioView } from "@/components/editor/ApiStudioView";
+import { CollectionsView } from "@/components/editor/CollectionsView";
+import { SettingsView } from "@/components/editor/SettingsView";
+import { ConversionView } from "@/components/editor/ConversionView";
 import dynamic from "next/dynamic";
 
 const MonacoEditor = dynamic(() => import("@/components/editor/MonacoEditor"), {
@@ -92,6 +107,9 @@ export default function BlobDashboard({
   initialUserName,
 }: BlobDashboardProps) {
   const router = useRouter();
+  // --- Workspace Store States ---
+  const { activeView, setActiveView, isSidebarCollapsed, setSidebarCollapsed, addActivity } = useWorkspaceStore();
+
   // --- States ---
   const [blobsList, setBlobsList] = useState<Blob[]>(initialBlobs);
   const [selectedBlob, setSelectedBlob] = useState<Blob | null>(initialSelectedBlob || null);
@@ -110,15 +128,15 @@ export default function BlobDashboard({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [copied, setCopied] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [activeRightTab, setActiveRightTab] = useState<"tree" | "diff">("tree");
+  const [activeRightTab, setActiveRightTab] = useState<"tree" | "diff" | "schema">("tree");
   const [autosaveEnabled, setAutosaveEnabled] = useState(true);
   const [isAutosaving, setIsAutosaving] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renamingVal, setRenamingVal] = useState("");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [activeEditorTab, setActiveEditorTab] = useState<"editor" | "viewer">("editor");
   const { isOpen: isAiOpen, setIsOpen: setAiOpen } = useAiStore();
-  const [isApiClientModalOpen, setApiClientModalOpen] = useState(false);
 
   // Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -138,12 +156,21 @@ export default function BlobDashboard({
 
   // --- Sync State with URL Route changes ---
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const viewParam = params.get("view");
+      if (viewParam === "sql") {
+        setActiveView("sql");
+        return;
+      }
+    }
     if (initialSelectedBlob) {
       setSelectedBlob(initialSelectedBlob);
       setTitle(initialSelectedBlob.title);
       setContent(initialSelectedBlob.content);
+      setActiveView("workspace");
     }
-  }, [initialSelectedBlob]);
+  }, [initialSelectedBlob, setActiveView]);
 
   // --- Initial Theme Sync ---
   useEffect(() => {
@@ -308,6 +335,7 @@ export default function BlobDashboard({
     setSelectedBlob(blob);
     setTitle(blob.title);
     setContent(blob.content);
+    setActiveView("workspace");
     router.push(`/${blob.id}`);
   };
 
@@ -316,6 +344,7 @@ export default function BlobDashboard({
     setSelectedBlob(null);
     setTitle("Untitled Blob");
     setContent(JSON.stringify({ hello: "world", count: 1, active: true }, null, 2));
+    setActiveView("workspace");
     router.push("/");
     showToast("info", "Created new blank workspace");
   };
@@ -409,6 +438,7 @@ export default function BlobDashboard({
           if (fetchRes.ok) {
             const updatedBlob = (await fetchRes.json()) as Blob;
             showToast("success", "Blob updated successfully");
+            addActivity("blob_update", `Updated JSON Blob: ${title}`);
             const listRes = await fetch("/api/blobs");
             if (listRes.ok) {
               const updatedList = (await listRes.json()) as Blob[];
@@ -434,6 +464,7 @@ export default function BlobDashboard({
           if (fetchRes.ok) {
             const newBlob = (await fetchRes.json()) as Blob;
             showToast("success", "Blob created successfully");
+            addActivity("blob_create", `Created JSON Blob: ${title}`);
             const listRes = await fetch("/api/blobs");
             if (listRes.ok) {
               const updatedList = (await listRes.json()) as Blob[];
@@ -462,6 +493,7 @@ export default function BlobDashboard({
         });
         if (fetchRes.ok) {
           showToast("success", "Blob deleted successfully");
+          addActivity("blob_update", `Deleted JSON Blob: ${selectedBlob.title}`);
           setShowDeleteConfirm(false);
           const listRes = await fetch("/api/blobs");
           let updatedList: Blob[] = [];
@@ -577,494 +609,709 @@ export default function BlobDashboard({
         />
       )}
 
-      {/* ================= SIDEBAR ================= */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 md:w-80 flex flex-col border-r border-border bg-card transition-transform duration-300 md:static md:translate-x-0 ${
-          isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        {/* Header */}
-        <div className="p-4 border-b border-border flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 select-none">
-            <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-tr from-primary to-indigo-600 shadow-md shadow-primary/20 text-primary-foreground font-extrabold text-sm tracking-tighter">
-              {"{"}
-              <span className="text-[8.5px] text-primary-foreground/90 absolute mt-0.5 font-semibold">JS</span>
-              {"}"}
-            </div>
-            <span className="font-bold text-sm tracking-tight">
-              JSON<span className="text-primary/95">Blob</span>
-              <span className="text-[9px] font-semibold text-primary/85 ml-1 border border-primary/25 px-1 rounded-sm bg-primary/5">SaaS</span>
-            </span>
-          </div>
-
-          {/* Close button for mobile menu */}
+      {/* ================= THIN ACTIVITY BAR (IDE SIDEBAR) ================= */}
+      <aside className="w-16 bg-card border-r border-border flex flex-col justify-between items-center py-4 shrink-0 z-50 select-none">
+        {/* Top Part: Logo & Navigation */}
+        <div className="flex flex-col items-center gap-6 w-full">
+          {/* Logo */}
           <button
-            onClick={() => setIsMobileMenuOpen(false)}
-            className="p-2 hover:bg-accent hover:text-accent-foreground rounded-md md:hidden transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground"
-            title="Close Sidebar"
+            onClick={() => {
+              setSelectedBlob(null);
+              router.push("/");
+              setActiveView("dashboard");
+            }}
+            className="relative flex items-center justify-center w-9 h-9 rounded-lg bg-gradient-to-tr from-primary to-indigo-600 shadow-md shadow-primary/20 text-primary-foreground font-extrabold text-xs tracking-tighter cursor-pointer hover:scale-105 transition-transform"
+            title="JSONBlob Dashboard"
           >
-            <X className="w-5 h-5" />
+            {"{"}
+            <span className="text-[9px] text-primary-foreground/90 absolute mt-0.5 font-semibold">JS</span>
+            {"}"}
           </button>
+
+          {/* Navigation Items */}
+          <nav className="flex flex-col items-center gap-1 w-full">
+            {/* Dashboard Link */}
+            <button
+              onClick={() => setActiveView("dashboard")}
+              title="Dashboard"
+              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
+                activeView === "dashboard"
+                  ? "bg-primary/10 text-primary border-primary"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+              }`}
+            >
+              <Layout className="w-5 h-5" />
+            </button>
+
+            {/* Workspace Link */}
+            <button
+              onClick={() => {
+                setActiveView("workspace");
+                // If clicked while already in workspace view, toggle collapse of explorer sidebar
+                if (activeView === "workspace") {
+                  setSidebarCollapsed(!isSidebarCollapsed);
+                } else {
+                  setSidebarCollapsed(false);
+                }
+              }}
+              title="Workspace (JSON Editor)"
+              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
+                activeView === "workspace"
+                  ? "bg-primary/10 text-primary border-primary"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+              }`}
+            >
+              <FileJson className="w-5 h-5" />
+            </button>
+
+            {/* SQL Workspace Link */}
+            <button
+              onClick={() => setActiveView("sql")}
+              title="SQL Workspace"
+              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
+                activeView === "sql"
+                  ? "bg-primary/10 text-primary border-primary"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+              }`}
+            >
+              <Database className="w-5 h-5" />
+            </button>
+
+            {/* API Studio Link */}
+            <button
+              onClick={() => setActiveView("api")}
+              title="API Studio"
+              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
+                activeView === "api"
+                  ? "bg-primary/10 text-primary border-primary"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+              }`}
+            >
+              <Send className="w-5 h-5" />
+            </button>
+
+            {/* Collections Link */}
+            <button
+              onClick={() => setActiveView("collections")}
+              title="Collections"
+              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
+                activeView === "collections"
+                  ? "bg-primary/10 text-primary border-primary"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+              }`}
+            >
+              <Layers className="w-5 h-5" />
+            </button>
+
+            {/* Format Converter Link */}
+            <button
+              onClick={() => setActiveView("conversion")}
+              title="Format Converter"
+              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
+                activeView === "conversion"
+                  ? "bg-primary/10 text-primary border-primary"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+              }`}
+            >
+              <ArrowLeftRight className="w-5 h-5" />
+            </button>
+
+            {/* Settings Link */}
+            <button
+              onClick={() => setActiveView("settings")}
+              title="Settings"
+              className={`w-full py-3 flex items-center justify-center transition-all cursor-pointer relative border-l-2 ${
+                activeView === "settings"
+                  ? "bg-primary/10 text-primary border-primary"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+              }`}
+            >
+              <SettingsIcon className="w-5 h-5" />
+            </button>
+          </nav>
         </div>
 
-        {/* Search */}
-        <div className="p-3 border-b border-border">
-          <div className="relative flex items-center">
-            <Search className="w-4 h-4 absolute left-3 text-muted-foreground pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search blobs..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-1.5 bg-background border border-border rounded-md text-sm outline-none focus:border-muted-foreground transition-colors"
-            />
-          </div>
-        </div>
-
-        {/* Templates Section */}
-        <div className="p-3 border-b border-border bg-accent/5">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground uppercase mb-2">
-            <BookOpen className="w-3.5 h-3.5 text-primary" />
-            <span>Templates</span>
-          </div>
-          <div className="space-y-1">
-            {TEMPLATES.map((tmpl) => (
-              <button
-                key={tmpl.id}
-                onClick={() => {
-                  setSelectedBlob(null);
-                  setTitle(tmpl.title);
-                  setContent(tmpl.content);
-                  router.push("/");
-                  showToast("info", `Loaded template: ${tmpl.title}`);
-                }}
-                className="w-full text-left px-2.5 py-1.5 text-xs rounded hover:bg-accent hover:text-foreground transition-all truncate block text-muted-foreground border border-transparent hover:border-border cursor-pointer"
-              >
-                {tmpl.title}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* My Blobs Title Header */}
-        <div className="p-3 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-bold text-muted-foreground uppercase">My Blobs</span>
-            {userName && (
-              <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
-                {filteredBlobs.length}
-              </span>
-            )}
-          </div>
+        {/* Bottom Part: Direct Logout & Theme toggle */}
+        <div className="flex flex-col items-center gap-2 w-full">
+          {/* Theme Switch */}
           <button
-            onClick={handleNewBlob}
-            title="Create New JSON Blob"
-            className="flex items-center justify-center p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            onClick={toggleTheme}
+            title="Toggle Theme"
+            className="w-full py-3 hover:bg-accent text-muted-foreground hover:text-foreground flex items-center justify-center transition-all cursor-pointer border-l-2 border-transparent"
           >
-            <Plus className="w-3.5 h-3.5" />
+            {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
-        </div>
 
-        {/* List of Blobs */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {!userName ? (
-            <div className="flex flex-col items-center justify-center p-6 text-center text-muted-foreground my-auto h-64">
-              <FileJson className="w-8 h-8 mb-2 opacity-40" />
-              <p className="text-xs font-medium mb-3">Sign in to save and sync your JSON blobs</p>
-              <a
-                href="/auth"
-                className="px-4 py-1.5 text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 rounded-md transition-opacity"
-              >
-                Sign In
-              </a>
-            </div>
-          ) : filteredBlobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-8 text-center text-muted-foreground my-auto h-64">
-              <FileJson className="w-8 h-8 mb-2 opacity-40" />
-              <p className="text-xs font-medium mb-3">No blobs yet</p>
-              <button
-                onClick={handleNewBlob}
-                className="px-4 py-1.5 text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 rounded-md transition-opacity cursor-pointer"
-              >
-                Create Blob
-              </button>
-            </div>
-          ) : (
-            filteredBlobs.map((blob) => {
-              const isActive = selectedBlob?.id === blob.id;
-              const formattedDate = new Date(blob.updatedAt).toLocaleDateString(undefined, {
-                month: "short",
-                day: "numeric",
-              });
-              return (
-                <div
-                  key={blob.id}
-                  onClick={() => handleSelectBlob(blob)}
-                  className={`group w-full text-left p-3 rounded-md transition-all border flex flex-col gap-1.5 cursor-pointer relative ${isActive
-                      ? "bg-accent border-muted-foreground"
-                      : "bg-transparent border-transparent hover:bg-accent/50"
-                    }`}
-                >
-                  <div className="flex items-start justify-between gap-2 min-w-0 w-full">
-                    {renamingId === blob.id ? (
-                      <input
-                        type="text"
-                        value={renamingVal}
-                        onChange={(e) => setRenamingVal(e.target.value)}
-                        onBlur={() => handleSaveRename(blob)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleSaveRename(blob);
-                          if (e.key === "Escape") setRenamingId(null);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        autoFocus
-                        className="bg-background border border-border rounded px-1.5 py-0.5 text-xs w-full outline-none focus:border-primary"
-                      />
-                    ) : (
-                      <span className="font-medium text-sm truncate flex-1 min-w-0">{blob.title}</span>
-                    )}
-                    
-                    {renamingId !== blob.id && (
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {/* Hover Actions */}
-                        <div className="group-hover:flex hidden items-center gap-0.5">
-                          <button
-                            onClick={(e) => handleStartRename(blob, e)}
-                            title="Rename"
-                            className="p-0.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground cursor-pointer"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={(e) => handleDeleteClick(blob.id, e)}
-                            title="Delete"
-                            className="p-0.5 hover:bg-muted rounded text-muted-foreground hover:text-destructive cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <span className="text-[10px] text-muted-foreground whitespace-nowrap group-hover:hidden self-center">
-                          {formattedDate}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <span className="text-xs text-muted-foreground truncate opacity-70">
-                    {blob.content.substring(0, 100).replace(/\s+/g, " ")}
-                  </span>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* Sidebar Footer */}
-        <div className="p-4 border-t border-border bg-accent/5 flex items-center justify-between gap-2 shrink-0">
-          {/* User profile / Login */}
+          {/* User Sign Out / Sign In direct button */}
           {userName ? (
-            <div className="flex items-center gap-2 min-w-0">
-              <div
-                className="w-7 h-7 rounded-full bg-primary/10 border border-primary/20 text-primary font-bold text-xs flex items-center justify-center cursor-default uppercase shrink-0"
-                title={`Logged in as ${userName}`}
-              >
-                {userName.charAt(0)}
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs font-semibold truncate text-foreground leading-tight">{userName}</span>
-                <button
-                  onClick={handleSignOut}
-                  className="text-[10px] font-bold text-red-500 hover:text-red-600 transition-colors text-left"
-                  title="Sign Out"
-                >
-                  Sign Out
-                </button>
-              </div>
-            </div>
+            <button
+              onClick={handleSignOut}
+              title={`Sign Out (${userName})`}
+              className="w-full py-3 text-red-500 hover:text-red-600 hover:bg-red-500/10 flex items-center justify-center transition-all cursor-pointer border-l-2 border-transparent"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
           ) : (
             <a
               href="/auth"
-              className="px-2.5 py-1.5 text-xs font-bold border border-border hover:bg-accent rounded-md transition-colors"
-              title="Sign In / Sign Up"
+              title="Sign In / Register"
+              className="w-full py-3 text-muted-foreground hover:text-foreground hover:bg-accent flex items-center justify-center transition-all cursor-pointer border-l-2 border-transparent"
             >
-              Sign In
+              <User className="w-5 h-5" />
             </a>
           )}
-
-          {/* Theme & Playground Actions */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={toggleTheme}
-              className="p-2 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors"
-              title="Toggle Theme"
-            >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-            <Link
-              href="/playground"
-              className="p-2 border border-border hover:bg-accent rounded-md transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground cursor-pointer"
-              title="Go to Code Playground"
-            >
-              <Terminal className="w-4 h-4" />
-            </Link>
-          </div>
         </div>
       </aside>
 
-      {/* ================= EDITOR WORKSPACE ================= */}
-      <main className="flex-1 flex flex-col overflow-hidden bg-background">
-        {/* Header Action Bar */}
-        <header className="h-16 px-4 md:px-6 border-b border-border flex items-center justify-between gap-3 bg-card shrink-0">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
+      {/* ================= SECONDARY FILE EXPLORER SIDE PANEL ================= */}
+      {activeView === "workspace" && !isSidebarCollapsed && (
+        <aside
+          className={`fixed inset-y-0 left-16 z-40 w-72 md:w-80 flex flex-col border-r border-border bg-card transition-transform duration-300 md:static md:translate-x-0 ${
+            isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          {/* Header */}
+          <div className="p-4 border-b border-border flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 select-none">
+              <span className="font-bold text-sm tracking-tight">
+                JSON<span className="text-primary/95">Explorer</span>
+              </span>
+            </div>
+
+            {/* Close button for mobile menu */}
             <button
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="p-2 hover:bg-accent hover:text-accent-foreground rounded-md md:hidden shrink-0 text-muted-foreground hover:text-foreground"
-              title="Open Sidebar"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="p-2 hover:bg-accent hover:text-accent-foreground rounded-md md:hidden transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground"
+              title="Close Sidebar"
             >
-              <Menu className="w-5 h-5" />
+              <X className="w-5 h-5" />
             </button>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="text-base md:text-lg font-semibold bg-transparent border-none outline-none focus:ring-0 w-full truncate text-foreground min-w-[120px] md:min-w-[200px]"
-              placeholder="Untitled Blob"
+          </div>
+
+          {/* Search */}
+          <div className="p-3 border-b border-border">
+            <div className="relative flex items-center">
+              <Search className="w-4 h-4 absolute left-3 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search blobs..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-1.5 bg-background border border-border rounded-md text-sm outline-none focus:border-muted-foreground transition-colors"
+              />
+            </div>
+          </div>
+
+          {/* Templates Section */}
+          <div className="p-3 border-b border-border bg-accent/5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground uppercase mb-2">
+              <BookOpen className="w-3.5 h-3.5 text-primary" />
+              <span>Templates</span>
+            </div>
+            <div className="space-y-1">
+              {TEMPLATES.map((tmpl) => (
+                <button
+                  key={tmpl.id}
+                  onClick={() => {
+                    setSelectedBlob(null);
+                    setTitle(tmpl.title);
+                    setContent(tmpl.content);
+                    router.push("/");
+                    showToast("info", `Loaded template: ${tmpl.title}`);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 text-xs rounded hover:bg-accent hover:text-foreground transition-all truncate block text-muted-foreground border border-transparent hover:border-border cursor-pointer"
+                >
+                  {tmpl.title}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* My Blobs Title Header */}
+          <div className="p-3 border-b border-border flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold text-muted-foreground uppercase">My Blobs</span>
+              {userName && (
+                <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
+                  {filteredBlobs.length}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={handleNewBlob}
+              title="Create New JSON Blob"
+              className="flex items-center justify-center p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* List of Blobs */}
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {!userName ? (
+              <div className="flex flex-col items-center justify-center p-6 text-center text-muted-foreground my-auto h-64">
+                <FileJson className="w-8 h-8 mb-2 opacity-40" />
+                <p className="text-xs font-medium mb-3">Sign in to save and sync your JSON blobs</p>
+                <a
+                  href="/auth"
+                  className="px-4 py-1.5 text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 rounded-md transition-opacity"
+                >
+                  Sign In
+                </a>
+              </div>
+            ) : filteredBlobs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center p-8 text-center text-muted-foreground my-auto h-64">
+                <FileJson className="w-8 h-8 mb-2 opacity-40" />
+                <p className="text-xs font-medium mb-3">No blobs yet</p>
+                <button
+                  onClick={handleNewBlob}
+                  className="px-4 py-1.5 text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 rounded-md transition-opacity cursor-pointer"
+                >
+                  Create Blob
+                </button>
+              </div>
+            ) : (
+              filteredBlobs.map((blob) => {
+                const isActive = selectedBlob?.id === blob.id;
+                const formattedDate = new Date(blob.updatedAt).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                });
+                return (
+                  <div
+                    key={blob.id}
+                    onClick={() => handleSelectBlob(blob)}
+                    className={`group w-full text-left p-3 rounded-md transition-all border flex flex-col gap-1.5 cursor-pointer relative ${isActive
+                        ? "bg-accent border-muted-foreground"
+                        : "bg-transparent border-transparent hover:bg-accent/50"
+                      }`}
+                  >
+                    <div className="flex items-start justify-between gap-2 min-w-0 w-full">
+                      {renamingId === blob.id ? (
+                        <input
+                          type="text"
+                          value={renamingVal}
+                          onChange={(e) => setRenamingVal(e.target.value)}
+                          onBlur={() => handleSaveRename(blob)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveRename(blob);
+                            if (e.key === "Escape") setRenamingId(null);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          autoFocus
+                          className="bg-background border border-border rounded px-1.5 py-0.5 text-xs w-full outline-none focus:border-primary"
+                        />
+                      ) : (
+                        <span className="font-medium text-sm truncate flex-1 min-w-0">{blob.title}</span>
+                      )}
+                      
+                      {renamingId !== blob.id && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {/* Hover Actions */}
+                          <div className="group-hover:flex hidden items-center gap-0.5">
+                            <button
+                              onClick={(e) => handleStartRename(blob, e)}
+                              title="Rename"
+                              className="p-0.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground cursor-pointer"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => handleDeleteClick(blob.id, e)}
+                              title="Delete"
+                              className="p-0.5 hover:bg-muted rounded text-muted-foreground hover:text-destructive cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground whitespace-nowrap group-hover:hidden self-center">
+                            {formattedDate}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground truncate opacity-70">
+                      {blob.content.substring(0, 100).replace(/\s+/g, " ")}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </aside>
+      )}
+
+      {/* ================= MAIN PANEL VIEW PORT ================= */}
+      {activeView === "workspace" ? (
+        <main className="flex-1 flex flex-col overflow-hidden bg-background">
+          {/* Header Action Bar */}
+          <header className="h-16 px-4 md:px-6 border-b border-border flex items-center justify-between gap-3 bg-card shrink-0">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <button
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="p-2 hover:bg-accent text-muted-foreground hover:text-foreground rounded-md md:hidden transition-colors"
+                title="Open Sidebar"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <FileJson className="w-4 h-4 text-primary shrink-0" />
+                <span className="font-semibold text-sm truncate">{title}</span>
+                {isAutosaving && (
+                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-accent px-1.5 py-0.5 rounded font-mono shrink-0 select-none">
+                    <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                    <span>Autosaving</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Primary Action Controls */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Save / Sync */}
+              <button
+                onClick={handleSave}
+                disabled={isPending || !title.trim() || !isValidJson}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground hover:opacity-95 disabled:opacity-50 text-xs font-bold rounded-md transition-all shadow-sm shadow-primary/10 cursor-pointer"
+                title="Save updates"
+              >
+                {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                <span>Save</span>
+              </button>
+
+              {/* Clear */}
+              <button
+                onClick={handleClear}
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent text-muted-foreground hover:text-foreground rounded-md transition-colors"
+                title="Clear Editor"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Clear</span>
+              </button>
+
+              {/* Reset */}
+              <button
+                onClick={handleReset}
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent text-muted-foreground hover:text-foreground rounded-md transition-colors"
+                title="Reset Editor to Saved State"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Reset</span>
+              </button>
+
+              {/* Format */}
+              <button
+                onClick={handleBeautify}
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
+                title="Format JSON"
+              >
+                <Code className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Format</span>
+              </button>
+
+              {/* Validate */}
+              <button
+                onClick={handleValidate}
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
+                title="Validate JSON syntax"
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Validate</span>
+              </button>
+
+              {/* Copy */}
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
+                title="Copy to Clipboard"
+              >
+                {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                <span className="hidden md:inline">Copy</span>
+              </button>
+
+              {/* Download */}
+              <button
+                onClick={handleDownload}
+                className="hidden sm:flex p-2 border border-border hover:bg-accent rounded-md transition-colors"
+                title="Download File"
+              >
+                <Download className="w-3.5 h-3.5" />
+              </button>
+
+              {/* AI Assistant Toggle */}
+              <button
+                onClick={() => setAiOpen(!isAiOpen)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md border transition-all cursor-pointer ${
+                  isAiOpen
+                    ? "bg-violet-600 border-violet-600 text-white shadow-md shadow-violet-500/10"
+                    : "border-border hover:bg-accent text-muted-foreground hover:text-foreground"
+                }`}
+                title="Toggle AI Assistant"
+              >
+                <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                <span className="hidden md:inline">AI Assistant</span>
+              </button>
+            </div>
+          </header>
+
+          {/* Editor Area */}
+          <div className="flex-1 flex overflow-hidden min-h-0">
+            {/* Main Workspace (Split 50/50 between Editor and Helper Tools) */}
+            <div className="flex-1 flex overflow-hidden min-w-0">
+              {/* Left Monaco text editor */}
+              <div className="flex-1 flex flex-col min-w-0 border-r border-border">
+                {/* Tab Selector inside editor */}
+                <div className="h-9 px-4 border-b border-border bg-card/50 flex items-center justify-between text-xs text-muted-foreground shrink-0">
+                  <div className="flex gap-4 h-full">
+                    <button
+                      onClick={() => setActiveEditorTab("editor")}
+                      className={`font-semibold h-full border-b-2 px-1 transition-all cursor-pointer ${
+                        activeEditorTab === "editor" ? "border-primary text-primary" : "border-transparent hover:text-foreground"
+                      }`}
+                    >
+                      Source Editor
+                    </button>
+                    <button
+                      onClick={() => setActiveEditorTab("viewer")}
+                      className={`font-semibold h-full border-b-2 px-1 transition-all cursor-pointer ${
+                        activeEditorTab === "viewer" ? "border-primary text-primary" : "border-transparent hover:text-foreground"
+                      }`}
+                    >
+                      Visual Schema Tree
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 relative bg-background">
+                  {activeEditorTab === "editor" ? (
+                    <MonacoEditor
+                      value={content}
+                      onChange={(val) => setContent(val || "")}
+                      isDark={isDark}
+                      language="json"
+                    />
+                  ) : (
+                    <JsonTreeView data={content} />
+                  )}
+                </div>
+              </div>
+
+              {/* Right side analytics/diff tabs panel */}
+              <div className="hidden md:flex flex-1 flex-col bg-card/30 border-r border-border overflow-hidden">
+                {/* Right Tab Bar */}
+                <div className="h-9 border-b border-border bg-card/60 flex items-center px-4 gap-4 shrink-0">
+                  <button
+                    onClick={() => setActiveRightTab("tree")}
+                    className={`text-xs font-semibold h-full border-b-2 px-1 transition-all cursor-pointer ${
+                      activeRightTab === "tree" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Interactive Tree
+                  </button>
+                  <button
+                    onClick={() => setActiveRightTab("diff")}
+                    className={`text-xs font-semibold h-full border-b-2 px-1 transition-all cursor-pointer ${
+                      activeRightTab === "diff" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Workspace Diff
+                  </button>
+                  <button
+                    onClick={() => setActiveRightTab("schema")}
+                    className={`text-xs font-semibold h-full border-b-2 px-1 transition-all cursor-pointer ${
+                      activeRightTab === "schema" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Schema Validation
+                  </button>
+                </div>
+
+                {/* Tab content panel */}
+                <div className="flex-1 overflow-hidden relative">
+                  {activeRightTab === "tree" ? (
+                    <div className="absolute inset-0 overflow-y-auto p-4">
+                      <JsonTreeView data={content} />
+                    </div>
+                  ) : activeRightTab === "diff" ? (
+                    <div className="absolute inset-0">
+                      <MonacoDiffEditor
+                        originalValue={selectedBlob ? selectedBlob.content : "{\n}"}
+                        modifiedValue={content}
+                        isDark={isDark}
+                      />
+                    </div>
+                  ) : (
+                    <div className="absolute inset-0">
+                      <JsonSchemaValidator
+                        data={content}
+                        isDark={isDark}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* AI Assistant panel */}
+            <AiAssistantPanel
+              module="json"
+              content={content}
+              error={validationError || undefined}
+              activeFileName={title || "document.json"}
+              onInsertCode={(code) => setContent(code)}
             />
           </div>
 
-          <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
-            {/* Code Playground Navigation */}
-            <Link
-              href="/playground"
-              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-md transition-all shadow-sm shadow-violet-500/10 hover:shadow-violet-500/20 cursor-pointer"
-              title="Open Developer Code Playground"
-            >
-              <Terminal className="w-3.5 h-3.5" />
-              <span className="hidden lg:inline">Playground</span>
-            </Link>
-            <div className="hidden md:block w-[1px] h-5 bg-border mx-0.5" />
+          {/* Footer Status Bar */}
+          <footer className="h-10 px-6 border-t border-border flex items-center justify-between text-xs text-muted-foreground bg-card">
+            <div className="flex items-center gap-4">
+              <span>{stats.lines} lines</span>
+              <span>{stats.kb} KB</span>
+            </div>
 
-            {/* Format */}
-            <button
-              onClick={handleBeautify}
-              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
-              title="Format JSON"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Format</span>
-            </button>
-
-            {/* Autosave Toggle */}
-            <label className="hidden sm:flex items-center gap-1.5 cursor-pointer select-none border border-border px-2.5 py-1.5 rounded-md hover:bg-accent text-xs font-medium transition-all duration-200">
-              <input
-                type="checkbox"
-                checked={autosaveEnabled}
-                onChange={(e) => setAutosaveEnabled(e.target.checked)}
-                className="rounded border-border text-primary focus:ring-primary w-3.5 h-3.5 cursor-pointer"
-              />
-              <div className="flex items-center gap-1.5">
-                <span className={`w-1.5 h-1.5 rounded-full ${autosaveEnabled ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground/50"}`} />
-                <span className="text-muted-foreground hidden md:inline">Autosave</span>
-              </div>
-              {isAutosaving && (
-                <Loader2 className="w-3 h-3 animate-spin text-primary ml-0.5" />
-              )}
-            </label>
-
-            {/* Clear */}
-            <button
-              onClick={handleClear}
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent text-muted-foreground hover:text-foreground rounded-md transition-colors"
-              title="Clear Editor"
-            >
-              <X className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Clear</span>
-            </button>
-
-            {/* Reset */}
-            <button
-              onClick={handleReset}
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent text-muted-foreground hover:text-foreground rounded-md transition-colors"
-              title="Reset Editor to Saved State"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Reset</span>
-            </button>
-
-            {/* Validate */}
-            <button
-              onClick={handleValidate}
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
-              title="Validate JSON syntax"
-            >
-              <CheckSquare className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Validate</span>
-            </button>
-
-            {/* Copy */}
-            <button
-              onClick={handleCopy}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-border hover:bg-accent rounded-md transition-colors"
-              title="Copy to Clipboard"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-              <span className="hidden md:inline">Copy</span>
-            </button>
-
-            {/* Download */}
-            <button
-              onClick={handleDownload}
-              className="hidden sm:flex p-2 border border-border hover:bg-accent rounded-md transition-colors"
-              title="Download File"
-            >
-              <Download className="w-3.5 h-3.5" />
-            </button>
-
-            {/* Generate API Client */}
-            <button
-              onClick={() => setApiClientModalOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border border-indigo-500/25 hover:border-indigo-500/40 bg-indigo-600/5 hover:bg-indigo-600/10 text-indigo-500 rounded-md transition-all cursor-pointer"
-              title="Generate API Client SDK"
-            >
-              <Code className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Generate API Client</span>
-            </button>
-
-            {/* AI Assistant Toggle */}
-            <button
-              onClick={() => setAiOpen(!isAiOpen)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
-                isAiOpen
-                  ? "bg-violet-600 text-white shadow-sm shadow-violet-500/10"
-                  : "border border-violet-500/25 hover:border-violet-500/40 bg-violet-600/5 hover:bg-violet-600/10 text-violet-500"
-              }`}
-              title="Toggle AI Developer Assistant"
-            >
-              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-              <span className="hidden md:inline">AI Assistant</span>
-            </button>
-
-            <div className="w-[1px] h-5 bg-border mx-0.5" />
-
-            {/* Save */}
-            <button
-              onClick={handleSave}
-              disabled={isPending}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 rounded-md transition-all shadow-sm"
-            >
-              {isPending ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <div className="flex items-center gap-2">
+              {validationError ? (
+                <div className="flex items-center gap-1.5 text-red-500 font-medium max-w-xs truncate" title={validationError}>
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  <span className="truncate">{validationError}</span>
+                </div>
               ) : (
-                <Check className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400 font-medium">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Valid JSON</span>
+                </div>
               )}
-              <span className="hidden md:inline">Save</span>
-            </button>
-          </div>
-        </header>
-
-        {/* Mobile Editor/Viewer Tab Switcher */}
-        <div className="flex md:hidden border-b border-border bg-card p-1.5 gap-1 shrink-0">
-          <button
-            onClick={() => setActiveEditorTab("editor")}
-            className={`flex-1 py-2 text-center text-xs font-semibold rounded-md transition-all ${
-              activeEditorTab === "editor"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
-            }`}
-          >
-            Code Editor
-          </button>
-          <button
-            onClick={() => setActiveEditorTab("viewer")}
-            className={`flex-1 py-2 text-center text-xs font-semibold rounded-md transition-all ${
-              activeEditorTab === "viewer"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
-            }`}
-          >
-            Tree & Diff Preview
-          </button>
-        </div>
-
-        {/* Editor Area */}
+            </div>
+          </footer>
+        </main>
+      ) : activeView === "dashboard" ? (
         <div className="flex-1 flex overflow-hidden">
-          {/* Left Panel: Raw Code Editor */}
-          <div className={`flex-1 p-3 md:p-4 h-full min-w-[280px] ${activeEditorTab === "editor" ? "block" : "hidden md:block"}`}>
-            <MonacoEditor value={content} onChange={(val) => setContent(val || "")} isDark={isDark} />
-          </div>
-
-          {/* Vertical Divider */}
-          <div className="hidden md:block w-[1px] h-full bg-border" />
-
-          {/* Right Panel: Interactive Helper Tools */}
-          <div className={`w-full md:w-1/2 p-3 md:p-4 h-full flex flex-col min-w-[280px] bg-accent/5 ${activeEditorTab === "viewer" ? "flex" : "hidden md:flex"}`}>
-            {/* Tabs selector */}
-            <div className="flex items-center gap-1.5 mb-3">
-              <button
-                onClick={() => setActiveRightTab("tree")}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${activeRightTab === "tree"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  }`}
-              >
-                Tree View
-              </button>
-              <button
-                onClick={() => setActiveRightTab("diff")}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${activeRightTab === "diff"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  }`}
-              >
-                JSON Diff (Saved)
-              </button>
-            </div>
-
-            {/* Tab content panel */}
-            <div className="flex-1 overflow-hidden relative">
-              {activeRightTab === "tree" ? (
-                <JsonTreeView data={content} />
-              ) : (
-                <MonacoDiffEditor
-                  originalValue={selectedBlob?.content || "{\n}"}
-                  modifiedValue={content}
-                  isDark={isDark}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* AI Assistant Sidebar Panel */}
+          <DashboardView
+            blobs={blobsList}
+            onSelectBlob={handleSelectBlob}
+            onDeleteBlob={(id) => {
+              const b = blobsList.find((x) => x.id === id);
+              if (b) {
+                setSelectedBlob(b);
+                setTitle(b.title);
+                setShowDeleteConfirm(true);
+              }
+            }}
+            onCreateNewBlob={handleNewBlob}
+          />
           <AiAssistantPanel
-            module="json"
-            content={content}
-            error={validationError || undefined}
-            activeFileName={title || "document.json"}
-            onInsertCode={(code) => setContent(code)}
+            module="playground"
+            content=""
+            onInsertCode={() => {}}
           />
         </div>
-
-        {/* Footer Status Bar */}
-        <footer className="h-10 px-6 border-t border-border flex items-center justify-between text-xs text-muted-foreground bg-card">
-          <div className="flex items-center gap-4">
-            <span>{stats.lines} lines</span>
-            <span>{stats.kb} KB</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {validationError ? (
-              <div className="flex items-center gap-1.5 text-red-500 font-medium max-w-xs truncate" title={validationError}>
-                <AlertCircle className="w-3.5 h-3.5" />
-                <span className="truncate">{validationError}</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400 font-medium">
-                <Check className="w-3.5 h-3.5" />
-                <span>Valid JSON</span>
-              </div>
-            )}
-          </div>
-        </footer>
-      </main>
+      ) : activeView === "sql" ? (
+        <div className="flex-1 flex overflow-hidden">
+          <SqlEditorView
+            isDark={isDark}
+            userName={userName}
+            onSaveAsBlob={(titleVal, contentVal) => {
+              handleNewBlob();
+              setTitle(titleVal);
+              setContent(contentVal);
+              setActiveView("workspace");
+            }}
+          />
+          <AiAssistantPanel
+            module="playground"
+            content={(() => {
+              if (typeof window !== "undefined") {
+                const tabs = useWorkspaceStore.getState().sqlTabs;
+                const activeId = useWorkspaceStore.getState().activeSqlTabId;
+                const activeTab = tabs.find(t => t.id === activeId) || tabs[0];
+                return activeTab ? activeTab.query : "";
+              }
+              return "";
+            })()}
+            language="sql"
+            onInsertCode={(code) => {
+              const tabs = useWorkspaceStore.getState().sqlTabs;
+              const activeId = useWorkspaceStore.getState().activeSqlTabId;
+              const activeTab = tabs.find(t => t.id === activeId) || tabs[0];
+              if (activeTab) {
+                useWorkspaceStore.getState().updateSqlTab(activeTab.id, { query: code });
+              }
+            }}
+          />
+        </div>
+      ) : activeView === "api" ? (
+        <div className="flex-1 flex overflow-hidden">
+          <ApiStudioView
+            isDark={isDark}
+            onSaveAsBlob={(titleVal, contentVal) => {
+              handleNewBlob();
+              setTitle(titleVal);
+              setContent(contentVal);
+              setActiveView("workspace");
+            }}
+          />
+          <AiAssistantPanel
+            module="json"
+            content={(() => {
+              if (typeof window !== "undefined") {
+                return useWorkspaceStore.getState().activeApiRequest.body || "";
+              }
+              return "";
+            })()}
+            language="json"
+            onInsertCode={(code) => {
+              useWorkspaceStore.getState().updateActiveApiRequest({ body: code });
+            }}
+          />
+        </div>
+      ) : activeView === "collections" ? (
+        <div className="flex-1 flex overflow-hidden">
+          <CollectionsView blobs={blobsList} onSelectBlob={handleSelectBlob} />
+          <AiAssistantPanel
+            module="playground"
+            content=""
+            onInsertCode={() => {}}
+          />
+        </div>
+      ) : activeView === "conversion" ? (
+        <div className="flex-1 flex overflow-hidden">
+          <ConversionView
+            isDark={isDark}
+            onLoadIntoEditor={(convertedText) => {
+              handleNewBlob();
+              setContent(convertedText);
+              setActiveView("workspace");
+            }}
+            onSaveAsBlob={(titleVal, contentVal) => {
+              handleNewBlob();
+              setTitle(titleVal);
+              setContent(contentVal);
+              setActiveView("workspace");
+            }}
+          />
+          <AiAssistantPanel
+            module="playground"
+            content=""
+            onInsertCode={() => {}}
+          />
+        </div>
+      ) : (
+        <div className="flex-1 flex overflow-hidden">
+          <SettingsView
+            userName={userName}
+            isDark={isDark}
+            onThemeToggle={toggleTheme}
+            autosaveEnabled={autosaveEnabled}
+            onAutosaveToggle={setAutosaveEnabled}
+            onSignOut={handleSignOut}
+          />
+          <AiAssistantPanel
+            module="playground"
+            content=""
+            onInsertCode={() => {}}
+          />
+        </div>
+      )}
 
       {/* ================= CUSTOM CONFIRM DELETE MODAL ================= */}
       {showDeleteConfirm && (
@@ -1091,14 +1338,6 @@ export default function BlobDashboard({
           </div>
         </div>
       )}
-
-      {/* ================= AI API SDK CLIENT GENERATOR MODAL ================= */}
-      <ApiClientGeneratorModal
-        isOpen={isApiClientModalOpen}
-        onClose={() => setApiClientModalOpen(false)}
-        editorContent={content}
-        isDark={isDark}
-      />
 
       {/* ================= TOAST NOTIFICATION CONTAINER ================= */}
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">

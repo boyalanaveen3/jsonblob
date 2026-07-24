@@ -131,11 +131,14 @@ export async function signInAction(email: string, password: string) {
 export async function signOutAction() {
   try {
     const cookieStore = await cookies();
+    cookieStore.delete("userId");
+    cookieStore.delete("userName");
     cookieStore.set("userId", "", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       maxAge: 0,
+      expires: new Date(0),
       path: "/",
     });
     cookieStore.set("userName", "", {
@@ -143,6 +146,7 @@ export async function signOutAction() {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       maxAge: 0,
+      expires: new Date(0),
       path: "/",
     });
     return { success: true };

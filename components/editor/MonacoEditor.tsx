@@ -5,9 +5,10 @@ import Editor from "@monaco-editor/react";
 
 interface MonacoEditorProps {
   value: string;
-  onChange: (value: string | undefined) => void;
+  onChange?: (value: string | undefined) => void;
   isDark: boolean;
   language?: string;
+  readOnly?: boolean;
 }
 
 const EDITOR_OPTIONS = {
@@ -26,7 +27,7 @@ const EDITOR_OPTIONS = {
   padding: { top: 12, bottom: 12 },
 };
 
-export function MonacoEditor({ value, onChange, isDark, language = "json" }: MonacoEditorProps) {
+export function MonacoEditor({ value, onChange, isDark, language = "json", readOnly = false }: MonacoEditorProps) {
   const editorRef = useRef<any>(null);
 
   // Sync value from parent only if it differs from the editor's current internal value.
@@ -42,12 +43,12 @@ export function MonacoEditor({ value, onChange, isDark, language = "json" }: Mon
 
   function handleEditorDidMount(editor: any, monaco: any) {
     editorRef.current = editor;
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && !readOnly) {
       (window as any).monaco = monaco;
       (window as any).currentEditor = editor;
       (window as any).setEditorValue = (val: string) => {
         editor.setValue(val);
-        onChange(val);
+        if (onChange) onChange(val);
       };
     }
 
@@ -111,7 +112,10 @@ export function MonacoEditor({ value, onChange, isDark, language = "json" }: Mon
             Loading editor...
           </div>
         }
-        options={EDITOR_OPTIONS}
+        options={{
+          ...EDITOR_OPTIONS,
+          readOnly,
+        }}
       />
     </div>
   );
