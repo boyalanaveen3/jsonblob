@@ -1,35 +1,27 @@
-export const runtime = 'edge';
-
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { cloudflareService } from "@/lib/services/cloudflare.service";
 
 export async function GET() {
   const cookieStore = await cookies();
+  const sessionCookie = cookieStore.get("cf_d1_oauth_session");
   const tokenCookie = cookieStore.get("cf_d1_access_token");
 
-  if (!tokenCookie || !tokenCookie.value) {
+  if (!tokenCookie?.value && !sessionCookie?.value) {
     return NextResponse.json({ isConnected: false });
   }
 
   try {
-    const token = tokenCookie.value;
-    const accounts = await cloudflareService.getAccounts(token);
-
-    // Fetch D1 databases for each account associated with the access token
-    const accountData = Array.isArray(accounts) && accounts.length > 0 ? await Promise.all(accounts.map(async (a: any) => {
-      try {
-        const dbs = await cloudflareService.getD1Databases(a.id, token);
-        return { id: a.id, name: a.name, databases: dbs || [] };
-      } catch (err) {
-        console.warn(`Could not fetch D1 databases for account ${a.id}:`, err);
-        return { id: a.id, name: a.name, databases: [] };
-      }
-    })) : [];
-
-    return NextResponse.json({ isConnected: true, accounts: accountData });
-  } catch (e: any) {
-    console.error("Session check failed:", e);
+    if (sessionCookie?.value) {
+      const session = JSON.parse(sessionCookie.value);
+      return NextResponse.json({
+        isConnected: true,
+        accounts: session.accounts || [],
+        connectedAt: session.connectedAt,
+      });
+    }
+    // Token exists but no session metadata
+    return NextResponse.json({ isConnected: true, accounts: [] });
+  } catch (e) {
     return NextResponse.json({ isConnected: false });
   }
 }

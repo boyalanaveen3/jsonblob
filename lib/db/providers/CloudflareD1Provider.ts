@@ -191,6 +191,9 @@ export class CloudflareD1Provider implements IDatabaseProvider {
     try {
       await fetch("/api/auth/cloudflare/session", { method: "DELETE" });
       localStorage.removeItem(SESSION_STORAGE_KEY);
+      localStorage.removeItem("cf_all_accounts");
+      localStorage.removeItem("cf_active_acc_id");
+      localStorage.removeItem("active_sql_provider_id");
     } catch (e) {
       // fallback
     }
@@ -198,17 +201,40 @@ export class CloudflareD1Provider implements IDatabaseProvider {
 
   getConnectionStatus(): ProviderConnectionStatus {
     if (typeof window === "undefined") return { isConnected: false };
-    
+
+    // Primary: check localStorage session (set after successful OAuth callback)
     const session = this.getSession();
     if (session && session.isConnected !== false) {
       return {
         isConnected: true,
         accountName: session.accountName || "Cloudflare Production D1",
-        email: session.email || "boyalanaveen103@gmail.com",
+        email: session.email || "",
         organization: session.organization || "Cloudflare Global",
         connectedAt: session.connectedAt || new Date().toISOString(),
       };
     }
+
+    // Fallback: check if cf_all_accounts is set (populated from server session)
+    try {
+      const rawAccounts = localStorage.getItem("cf_all_accounts");
+      if (rawAccounts) {
+        const accounts = JSON.parse(rawAccounts);
+        if (Array.isArray(accounts) && accounts.length > 0) {
+          const activeAccId = localStorage.getItem("cf_active_acc_id");
+          const acc = accounts.find((a: any) => a.id === activeAccId) || accounts[0];
+          return {
+            isConnected: true,
+            accountName: acc.name || "Cloudflare Account",
+            email: "",
+            organization: "Cloudflare",
+            connectedAt: new Date().toISOString(),
+          };
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
     return { isConnected: false };
   }
 
