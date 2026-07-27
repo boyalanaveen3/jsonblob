@@ -174,8 +174,12 @@ export default function BlobDashboard({
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get("view");
-      if (viewParam === "sql") {
+      const oauthParam = params.get("oauth");
+      if (viewParam === "sql" || oauthParam === "success") {
         setActiveView("sql");
+        // Clean up OAuth params from URL without triggering navigation
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, "", cleanUrl + "?view=sql&provider=cloudflare-d1");
         return;
       }
     }
@@ -252,6 +256,11 @@ export default function BlobDashboard({
   useEffect(() => {
     if (!autosaveEnabled) return;
     if (!title.trim() || !isValidJson) return;
+    if (activeView !== "workspace") return; // Don't autosave when in SQL/other views
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("oauth") === "success" || params.get("view") === "sql") return;
+    }
 
     // Check if the content is actually different from the current saved state
     if (selectedBlob && content === selectedBlob.content && title === selectedBlob.title) return;

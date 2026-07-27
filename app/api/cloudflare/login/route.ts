@@ -5,7 +5,8 @@ import { NextResponse } from "next/server";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const redirectUrl = searchParams.get("redirect") || "/?view=sql&provider=cloudflare-d1";
-  const state = Buffer.from(JSON.stringify({ redirectUrl, timestamp: Date.now() })).toString("base64url");
+  const statePayload = JSON.stringify({ redirectUrl, timestamp: Date.now() });
+  const state = btoa(statePayload).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 
   const redirectUri = process.env.CLOUDFLARE_REDIRECT_URI || `${origin}/api/cloudflare/callback`;
   const clientId = process.env.CLOUDFLARE_CLIENT_ID;

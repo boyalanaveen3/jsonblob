@@ -83,8 +83,18 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
 
   const activeTab = sqlTabs.find((t) => t.id === activeSqlTabId) || sqlTabs[0];
 
-  // Provider architecture states
-  const [selectedProviderId, setSelectedProviderId] = useState<string>("sqlite");
+  // Provider architecture states — auto-select cloudflare-d1 if coming from OAuth
+  const [selectedProviderId, setSelectedProviderId] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("provider") === "cloudflare-d1" || params.get("oauth") === "success") {
+        return "cloudflare-d1";
+      }
+      const saved = localStorage.getItem("active_sql_provider_id");
+      if (saved) return saved;
+    }
+    return "sqlite";
+  });
   const [databases, setDatabases] = useState<D1DatabaseSchema[]>([]);
   const [activeDbId, setActiveDbId] = useState<string>("");
   const [connectionStatus, setConnectionStatus] = useState<ProviderConnectionStatus>({ isConnected: true });
@@ -149,9 +159,14 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
     const status = currentProvider.getConnectionStatus();
     setConnectionStatus(status);
 
-    if (status.isConnected || !currentProvider.requiresAuth) {
+    // For cloudflare-d1, getDatabases() fetches session itself — don't gate on local status
+    if (status.isConnected || !currentProvider.requiresAuth || currentProvider.id === "cloudflare-d1") {
       const dbs = await currentProvider.getDatabases();
       setDatabases(dbs);
+      // Update connection status from actual session result
+      if (currentProvider.id === "cloudflare-d1" && dbs.length > 0) {
+        setConnectionStatus(currentProvider.getConnectionStatus());
+      }
       if (dbs.length > 0 && (!activeDbId || !dbs.some(d => d.id === activeDbId))) {
         setActiveDbId(dbs[0].id);
       }
@@ -251,7 +266,9 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
   }, [selectedProviderId, refreshProviderData]);
 
   useEffect(() => {
-    refreshProviderData();
+    if (selectedProviderId !== "cloudflare-d1") {
+      refreshProviderData();
+    }
   }, [selectedProviderId, refreshProviderData]);
 
   // Active database reference
