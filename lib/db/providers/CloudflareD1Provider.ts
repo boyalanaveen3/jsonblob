@@ -252,13 +252,17 @@ export class CloudflareD1Provider implements IDatabaseProvider {
           const activeAccId = localStorage.getItem("cf_active_acc_id");
           const activeAcc = accounts.find((a: any) => a.id === activeAccId) || accounts[0];
 
-          if (activeAcc && Array.isArray(activeAcc.databases) && activeAcc.databases.length > 0) {
+          if (activeAcc && Array.isArray(activeAcc.databases)) {
+            if (activeAcc.databases.length === 0) {
+              this.databases = [];
+              return [];
+            }
             const dynamicDbs: D1DatabaseSchema[] = activeAcc.databases.map((db: any) => ({
               id: db.uuid || db.id,
               name: db.name,
-              size: "3.4 MB (Cloudflare D1)",
+              size: "Cloudflare D1",
               sqliteVersion: "SQLite 3.45.1 (Cloudflare D1)",
-              lastUpdated: "Active",
+              lastUpdated: db.created_at ? new Date(db.created_at).toLocaleDateString() : "Active",
               tables: INITIAL_D1_DATABASES[0].tables,
             }));
             this.databases = dynamicDbs;
@@ -287,7 +291,21 @@ export class CloudflareD1Provider implements IDatabaseProvider {
 
     if (typeof window !== "undefined") {
       try {
-        const activeAccId = localStorage.getItem("cf_active_acc_id") || "9810a3ca7fbba51cd61dec82f7926973";
+        let activeAccId = localStorage.getItem("cf_active_acc_id");
+        // Try finding which account owns dbId from cf_all_accounts
+        const rawAccounts = localStorage.getItem("cf_all_accounts");
+        if (rawAccounts) {
+          try {
+            const accounts = JSON.parse(rawAccounts);
+            const foundAcc = accounts.find((a: any) =>
+              Array.isArray(a.databases) && a.databases.some((d: any) => (d.uuid || d.id) === dbId)
+            );
+            if (foundAcc) {
+              activeAccId = foundAcc.id;
+            }
+          } catch (e) {}
+        }
+
         const apiRes = await fetch("/api/sql/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -298,23 +316,24 @@ export class CloudflareD1Provider implements IDatabaseProvider {
           }),
         });
 
-        if (apiRes.ok) {
-          const data: any = await apiRes.json();
-          if (data.success && Array.isArray(data.results)) {
-            return {
-              rows: data.results,
-              rowsCount: data.results.length,
-              duration: data.meta?.duration || Math.round(performance.now() - start),
-            };
-          } else if (data.error) {
-            return {
-              error: `SQL Error [CLOUDFLARE_D1]: ${data.error}`,
-              duration: Math.round(performance.now() - start),
-            };
-          }
+        const data: any = await apiRes.json().catch(() => ({}));
+        if (apiRes.ok && data.success && Array.isArray(data.results)) {
+          return {
+            rows: data.results,
+            rowsCount: data.results.length,
+            duration: data.meta?.duration || Math.round(performance.now() - start),
+          };
+        } else {
+          return {
+            error: data.error ? `SQL Error [CLOUDFLARE_D1]: ${data.error}` : `HTTP ${apiRes.status}: Failed to execute query on Cloudflare D1`,
+            duration: Math.round(performance.now() - start),
+          };
         }
-      } catch (err) {
-        // proceed to local fallback
+      } catch (err: any) {
+        return {
+          error: `Network Error: ${err.message || "Failed to contact query service"}`,
+          duration: Math.round(performance.now() - start),
+        };
       }
     }
 

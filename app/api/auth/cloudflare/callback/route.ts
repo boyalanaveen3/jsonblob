@@ -1,6 +1,24 @@
+export const runtime = 'edge';
+
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { cloudflareService } from "@/lib/services/cloudflare.service";
+import { getRequestContext } from "@cloudflare/next-on-pages";
+
+const DEFAULT_CLIENT_ID = "1cc954f25945e1e46bf4a5ac1d268cc3";
+const DEFAULT_CLIENT_SECRET = "cfoc_oCGnle064bwCNvkS8anivkY4ckctuF8m0x5gE9g9ff59553c";
+
+function getEnv(key: string): string {
+  try {
+    const ctx = getRequestContext();
+    const env = ctx?.env as Record<string, unknown>;
+    if (env && typeof env[key] === "string" && env[key]) return env[key] as string;
+  } catch (e) {}
+  if (process.env[key]) return process.env[key] as string;
+  if (key === "CLOUDFLARE_CLIENT_ID") return DEFAULT_CLIENT_ID;
+  if (key === "CLOUDFLARE_CLIENT_SECRET") return DEFAULT_CLIENT_SECRET;
+  return "";
+}
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -29,12 +47,12 @@ export async function GET(request: Request) {
     );
   }
 
-  const clientId = process.env.CLOUDFLARE_CLIENT_ID;
-  const clientSecret = process.env.CLOUDFLARE_CLIENT_SECRET;
+  const clientId = getEnv("CLOUDFLARE_CLIENT_ID");
+  const clientSecret = getEnv("CLOUDFLARE_CLIENT_SECRET");
 
   // Use the registered redirect URI from env (must match exactly what Cloudflare has)
   const redirectUri =
-    process.env.CLOUDFLARE_REDIRECT_URI ||
+    getEnv("CLOUDFLARE_REDIRECT_URI") ||
     `${origin}/api/auth/cloudflare/callback`;
 
   if (!clientId || !clientSecret) {
@@ -45,8 +63,12 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Exchange authorization code for access token
-    const tokenRes = await fetch("https://dash.cloudflare.com/oauth2/token", {
+    // Exchange authorization code for access token via dash.cloudflare.com
+    const endpoint = "https://dash.cloudflare.com/oauth2/token";
+    let tokenRes: Response | null = null;
+
+    // Strategy 1: client_secret_post
+    tokenRes = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -58,14 +80,43 @@ export async function GET(request: Request) {
       }),
     });
 
-    console.log("[CF Callback] Token exchange status:", tokenRes.status);
-
+    // Strategy 2: client_secret_basic
     if (!tokenRes.ok) {
-      const errBody = await tokenRes.text();
-      console.error("[CF Callback] Token exchange failed:", tokenRes.status, errBody);
-      return NextResponse.redirect(
-        new URL(`/auth?provider=cloudflare-d1&error=oauth_failed&reason=token_${tokenRes.status}`, origin)
-      );
+      const basicAuth = btoa(`${clientId}:${clientSecret}`);
+      tokenRes = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Authorization": `Basic ${basicAuth}`,
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: redirectUri,
+        }),
+      });
+    }
+
+    // Strategy 3: Public client
+    if (!tokenRes.ok) {
+      tokenRes = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          client_id: clientId,
+          code,
+          redirect_uri: redirectUri,
+        }),
+      });
+    }
+
+    if (!tokenRes || !tokenRes.ok) {
+      console.warn("[CF Callback] Custom OAuth token exchange unsuccessful. Transferring to session callback handler.");
+      const fallbackUrl = new URL("/api/cloudflare/callback", origin);
+      fallbackUrl.searchParams.set("code", code);
+      if (stateRaw) fallbackUrl.searchParams.set("state", stateRaw);
+      return NextResponse.redirect(fallbackUrl);
     }
 
     const tokenData: any = await tokenRes.json();
@@ -79,16 +130,16 @@ export async function GET(request: Request) {
     }
 
     // Fetch accounts linked to this token
-    let accounts: any[] = [];
+    let fetchedAccounts: any[] = [];
     try {
-      accounts = await cloudflareService.getAccounts(accessToken);
+      fetchedAccounts = await cloudflareService.getAccounts(accessToken);
     } catch (e) {
       console.warn("[CF Callback] Could not fetch accounts:", e);
     }
 
-    // Fetch D1 databases for every account
-    const accountsWithDbs = await Promise.all(
-      (accounts || []).map(async (acc: any) => {
+    // Fetch D1 databases for every fetched account
+    const newAccountsWithDbs = await Promise.all(
+      (fetchedAccounts || []).map(async (acc: any) => {
         try {
           const dbs = await cloudflareService.getD1Databases(acc.id, accessToken);
           return { id: acc.id, name: acc.name, databases: dbs || [] };
@@ -100,8 +151,55 @@ export async function GET(request: Request) {
 
     const cookieStore = await cookies();
 
-    // Store access token (httpOnly)
-    cookieStore.set("cf_d1_access_token", accessToken, {
+    // Parse existing session and token map to enable multi-account support
+    let existingAccounts: any[] = [];
+    let tokenMap: Record<string, string> = {};
+
+    const existingSessionCookie = cookieStore.get("cf_d1_oauth_session");
+    if (existingSessionCookie?.value) {
+      try {
+        const parsed = JSON.parse(existingSessionCookie.value);
+        if (Array.isArray(parsed.accounts)) {
+          existingAccounts = parsed.accounts;
+        }
+      } catch (e) {}
+    }
+
+    const existingTokenCookie = cookieStore.get("cf_d1_access_token");
+    if (existingTokenCookie?.value) {
+      try {
+        const parsed = JSON.parse(existingTokenCookie.value);
+        if (typeof parsed === "object" && parsed !== null) {
+          tokenMap = parsed;
+        } else if (typeof parsed === "string") {
+          tokenMap["_default"] = parsed;
+        }
+      } catch (e) {
+        tokenMap["_default"] = existingTokenCookie.value;
+      }
+    }
+
+    // Map the new access token to each fetched account ID
+    newAccountsWithDbs.forEach((acc: any) => {
+      if (acc.id) {
+        tokenMap[acc.id] = accessToken;
+      }
+    });
+    tokenMap["_default"] = accessToken;
+
+    // Merge new accounts into existing accounts list without duplicates
+    const mergedAccountsMap = new Map<string, any>();
+    existingAccounts.forEach((acc: any) => {
+      if (acc.id) mergedAccountsMap.set(acc.id, acc);
+    });
+    newAccountsWithDbs.forEach((acc: any) => {
+      if (acc.id) mergedAccountsMap.set(acc.id, acc);
+    });
+
+    const finalAccountsList = Array.from(mergedAccountsMap.values());
+
+    // Store token map as JSON in httpOnly cookie
+    cookieStore.set("cf_d1_access_token", JSON.stringify(tokenMap), {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -109,10 +207,10 @@ export async function GET(request: Request) {
       maxAge: 60 * 60 * 24 * 30,
     });
 
-    // Store session info (httpOnly) — no sensitive token, just metadata
+    // Store session info with merged accounts (httpOnly)
     const sessionPayload = {
       isConnected: true,
-      accounts: accountsWithDbs,
+      accounts: finalAccountsList,
       connectedAt: new Date().toISOString(),
     };
 
@@ -136,3 +234,4 @@ export async function GET(request: Request) {
     );
   }
 }
+

@@ -203,54 +203,52 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
   };
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("provider") === "cloudflare-d1") {
-        setSelectedProviderId("cloudflare-d1");
-        localStorage.setItem("active_sql_provider_id", "cloudflare-d1");
+    if (typeof window !== "undefined" && selectedProviderId === "cloudflare-d1") {
+      (async () => {
+        try {
+          const res = await fetch("/api/auth/cloudflare/session");
+          if (res.ok) {
+            const data = (await res.json()) as {
+              isConnected: boolean;
+              accounts?: Array<{
+                id: string;
+                name: string;
+                databases?: Array<{ uuid: string; name: string }>;
+              }>;
+            };
+            if (data.isConnected && Array.isArray(data.accounts) && data.accounts.length > 0) {
+              setCfAccounts(data.accounts);
+              localStorage.setItem("cf_all_accounts", JSON.stringify(data.accounts));
 
-        // Fetch server-side Cloudflare session
-        (async () => {
-          try {
-            const res = await fetch("/api/auth/cloudflare/session");
-            if (res.ok) {
-              const data = (await res.json()) as {
-                isConnected: boolean;
-                accounts?: Array<{
-                  id: string;
-                  name: string;
-                  databases?: Array<{ uuid: string; name: string }>;
-                }>;
-              };
-              if (data.isConnected && Array.isArray(data.accounts) && data.accounts.length > 0) {
-                setCfAccounts(data.accounts);
-                localStorage.setItem("cf_all_accounts", JSON.stringify(data.accounts));
+              const currentSavedAccId = localStorage.getItem("cf_active_acc_id");
+              const activeAcc = data.accounts.find((a: any) => a.id === currentSavedAccId) || data.accounts[0];
 
-                const currentSavedAccId = localStorage.getItem("cf_active_acc_id");
-                const activeAcc = data.accounts.find((a: any) => a.id === currentSavedAccId) || data.accounts[0];
-
-                if (activeAcc) {
-                  setSelectedAccountId(activeAcc.id);
-                  localStorage.setItem("cf_active_acc_id", activeAcc.id);
-                  localStorage.setItem("cloudflare_d1_session", JSON.stringify({
-                    isConnected: true,
-                    accountName: activeAcc.name,
-                    email: "gavvavamsikrishna@gmail.com",
-                    organization: "Cloudflare Global",
-                    connectedAt: new Date().toISOString(),
-                  }));
-                }
+              if (activeAcc) {
+                setSelectedAccountId(activeAcc.id);
+                localStorage.setItem("cf_active_acc_id", activeAcc.id);
+                localStorage.setItem("cloudflare_d1_session", JSON.stringify({
+                  isConnected: true,
+                  accountName: activeAcc.name,
+                  email: "gavvavamsikrishna@gmail.com",
+                  organization: "Cloudflare Global",
+                  connectedAt: new Date().toISOString(),
+                }));
               }
+            } else if (!data.isConnected) {
+              localStorage.removeItem("cloudflare_d1_session");
+              localStorage.removeItem("cf_all_accounts");
+              localStorage.removeItem("cf_active_acc_id");
+              setCfAccounts([]);
             }
-          } catch (e) {
-            // ignore
-          } finally {
-            refreshProviderData();
           }
-        })();
-      }
+        } catch (e) {
+          // ignore
+        } finally {
+          refreshProviderData();
+        }
+      })();
     }
-  }, [refreshProviderData]);
+  }, [selectedProviderId, refreshProviderData]);
 
   useEffect(() => {
     refreshProviderData();

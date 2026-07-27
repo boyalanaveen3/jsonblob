@@ -26,7 +26,23 @@ export async function POST(request: Request) {
       );
     }
 
-    const token = tokenCookie.value;
+    let token = tokenCookie.value;
+    try {
+      const parsedMap = JSON.parse(tokenCookie.value);
+      if (typeof parsedMap === "object" && parsedMap !== null) {
+        token = (accountId && parsedMap[accountId]) || parsedMap["_default"] || Object.values(parsedMap)[0];
+      }
+    } catch (e) {
+      // Plain string token
+    }
+
+    if (!token) {
+      return NextResponse.json(
+        { success: false, error: "Not authenticated for this Cloudflare account." },
+        { status: 401 }
+      );
+    }
+
     const targetAccountId = accountId || "9810a3ca7fbba51cd61dec82f7926973";
     const targetDbId = databaseId || "1ad3573e-3f03-4906-8599-0b66d06cdc0f";
 

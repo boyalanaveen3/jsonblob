@@ -11,7 +11,8 @@ export async function GET(request: Request) {
   let redirectPath = "/?view=sql&provider=cloudflare-d1";
   if (stateRaw) {
     try {
-      const decoded = JSON.parse(Buffer.from(stateRaw, "base64url").toString("utf-8"));
+      const padded = stateRaw.replace(/-/g, "+").replace(/_/g, "/");
+      const decoded = JSON.parse(atob(padded));
       if (decoded.redirectUrl) redirectPath = decoded.redirectUrl;
     } catch (e) {
       // fallback
