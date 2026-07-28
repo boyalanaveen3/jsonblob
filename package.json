@@ -10,7 +10,12 @@
     "pages:build": "npx @cloudflare/next-on-pages",
     "pages:deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "test": "node tests/unit/test-playground-suite.js",
+    "test:unit": "node tests/unit/test-playground-suite.js",
+    "test:api": "npx tsx tests/api/api-endpoints.test.ts",
+    "test:integration": "npx tsx tests/integration/test-storage-verification.ts && npx tsx tests/integration/test-api-studio-verification.ts",
+    "test:e2e": "node tests/e2e/test-e2e-suite.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

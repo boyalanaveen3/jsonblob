@@ -237,3 +237,204 @@ export function exportAsPostmanCollection(collection: ApiCollection): string {
 
   return JSON.stringify(postmanFormat, null, 2);
 }
+
+/**
+ * Parse a cURL command into an ApiCollection
+ */
+export function parseCurlCommand(curlStr: string): ApiCollection[] {
+  try {
+    let method: ApiRequestItem["method"] = "GET";
+    let url = "https://api.example.com";
+    const headers: ApiRequestItem["headers"] = [];
+    let body = "{\n  \n}";
+    let bodyType: ApiRequestItem["bodyType"] = "none";
+
+    // Extract method
+    const methodMatch = curlStr.match(/-X\s+([A-Z]+)/i) || curlStr.match(/--request\s+([A-Z]+)/i);
+    if (methodMatch) {
+      method = methodMatch[1].toUpperCase() as ApiRequestItem["method"];
+    }
+
+    // Extract URL
+    const urlMatch = curlStr.match(/['"]?(https?:\/\/[^\s'"]+)['"]?/);
+    if (urlMatch) {
+      url = urlMatch[1];
+    }
+
+    // Extract headers
+    const headerRegex = /(?:-H|--header)\s+['"]([^'"]+)['"]/g;
+    let match;
+    while ((match = headerRegex.exec(curlStr)) !== null) {
+      const parts = match[1].split(":");
+      if (parts.length >= 2) {
+        headers.push({
+          key: parts[0].trim(),
+          value: parts.slice(1).join(":").trim(),
+          enabled: true,
+        });
+      }
+    }
+
+    // Extract body data
+    const dataMatch = curlStr.match(/(?:-d|--data|--data-raw)\s+['"]([^'"]+)['"]/s);
+    if (dataMatch) {
+      body = dataMatch[1];
+      bodyType = "json";
+      if (method === "GET") method = "POST";
+    }
+
+    const req: ApiRequestItem = {
+      id: crypto.randomUUID(),
+      name: `${method} ${url.replace(/^https?:\/\//, "")}`,
+      method,
+      url,
+      headers,
+      auth: { type: "none" },
+      bodyType,
+      body,
+      formData: [],
+    };
+
+    return [
+      {
+        id: crypto.randomUUID(),
+        name: "cURL Import",
+        description: "Imported from cURL command",
+        requests: [req],
+      },
+    ];
+  } catch (err) {
+    console.error("Failed to parse cURL command:", err);
+    return [];
+  }
+}
+
+/**
+ * Parse HAR (HTTP Archive) JSON into ApiCollection
+ */
+export function parseHarSpec(jsonString: string): ApiCollection[] {
+  try {
+    const data = JSON.parse(jsonString);
+    if (!data?.log?.entries || !Array.isArray(data.log.entries)) return [];
+
+    const requests: ApiRequestItem[] = [];
+
+    for (const entry of data.log.entries) {
+      if (!entry.request) continue;
+      const req = entry.request;
+      const method = (req.method || "GET").toUpperCase() as ApiRequestItem["method"];
+      const url = req.url || "https://api.example.com";
+
+      const headers: ApiRequestItem["headers"] = (req.headers || []).map((h: any) => ({
+        key: h.name,
+        value: h.value,
+        enabled: true,
+      }));
+
+      let bodyType: ApiRequestItem["bodyType"] = "none";
+      let body = "{\n  \n}";
+      if (req.postData?.text) {
+        bodyType = "json";
+        body = req.postData.text;
+      }
+
+      requests.push({
+        id: crypto.randomUUID(),
+        name: `${method} ${url.split("?")[0].split("/").pop() || url}`,
+        method,
+        url,
+        headers,
+        auth: { type: "none" },
+        bodyType,
+        body,
+        formData: [],
+      });
+    }
+
+    return [
+      {
+        id: crypto.randomUUID(),
+        name: "HAR Imported Collection",
+        description: "Imported from HTTP Archive (HAR)",
+        requests,
+      },
+    ];
+  } catch (err) {
+    console.error("Failed to parse HAR spec:", err);
+    return [];
+  }
+}
+
+/**
+ * Export collection as OpenAPI 3.0 JSON specification
+ */
+export function exportAsOpenApiSpec(collection: ApiCollection): string {
+  const openApiDoc: any = {
+    openapi: "3.0.0",
+    info: {
+      title: collection.name,
+      description: collection.description || "Exported OpenAPI specification",
+      version: "1.0.0",
+    },
+    paths: {},
+  };
+
+  for (const req of collection.requests) {
+    try {
+      const urlObj = new URL(req.url);
+      const path = urlObj.pathname || "/";
+      if (!openApiDoc.paths[path]) {
+        openApiDoc.paths[path] = {};
+      }
+
+      const methodKey = req.method.toLowerCase();
+      openApiDoc.paths[path][methodKey] = {
+        summary: req.name,
+        responses: {
+          "200": {
+            description: "Successful response",
+          },
+        },
+      };
+
+      if (req.bodyType === "json" && req.body) {
+        openApiDoc.paths[path][methodKey].requestBody = {
+          content: {
+            "application/json": {
+              example: JSON.parse(req.body || "{}"),
+            },
+          },
+        };
+      }
+    } catch {
+      // Ignore URL parsing errors for template variables
+    }
+  }
+
+  return JSON.stringify(openApiDoc, null, 2);
+}
+
+/**
+ * Export request as cURL command
+ */
+export function exportAsCurlCommand(req: ApiRequestItem): string {
+  const parts = [`curl -X ${req.method} "${req.url}"`];
+
+  for (const h of req.headers || []) {
+    if (h.enabled && h.key) {
+      parts.push(`-H "${h.key}: ${h.value}"`);
+    }
+  }
+
+  if (req.auth?.type === "bearer" && req.auth.bearerToken) {
+    parts.push(`-H "Authorization: Bearer ${req.auth.bearerToken}"`);
+  }
+
+  if (req.bodyType === "json" && req.body) {
+    const minified = JSON.stringify(JSON.parse(req.body || "{}"));
+    parts.push(`-d '${minified}'`);
+  }
+
+  return parts.join(" \\\n  ");
+}
+

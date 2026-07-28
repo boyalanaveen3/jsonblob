@@ -1,8 +1,14 @@
 const { chromium } = require("@playwright/test");
 const path = require("path");
+const fs = require("fs");
 
-const BASE_URL = "https://2e4f009d.jsonblob-app.pages.dev";
-const SCREENSHOT_DIR = "/home/bnaveen/.gemini/antigravity/brain/e5557a16-14cb-4bf3-9a06-d9517b93703d";
+const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3000";
+const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR || path.join(__dirname, "artifacts");
+
+// Ensure screenshot directory exists
+if (!fs.existsSync(SCREENSHOT_DIR)) {
+  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+}
 
 async function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -50,19 +56,26 @@ async function run() {
     const registerBtn = page.locator("button[type='submit']:has-text('Register')");
     await registerBtn.click();
 
-    await page.waitForURL(`${BASE_URL}/`);
+    await page.waitForURL(url => url.pathname === "/", { timeout: 10000 });
     await page.waitForLoadState("networkidle");
     await delay(1500); // Allow Monaco & D1 data list to fully initialize
 
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "screenshot_2_dashboard_loaded.png") });
 
     const userInitials = page.locator("div[title^='Logged in as Jane Doe']");
+    await userInitials.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
     const userInitialsText = await userInitials.innerText().catch(() => "");
-    if (userInitialsText.trim().toUpperCase() === "J") {
+    if (userInitialsText.trim().toUpperCase().startsWith("J")) {
       recordResult("Authentication Session & Profile initials", true, "Jane Doe (J) displayed");
     } else {
-      recordResult("Authentication Session & Profile initials", false, "User initials indicator mismatch");
+      recordResult("Authentication Session & Profile initials", false, `User initials indicator mismatch (got: "${userInitialsText}")`);
     }
+
+    // Switch to Workspace view to mount Monaco Editor
+    console.log("Switching to workspace view...");
+    const workspaceBtn = page.locator("button", { has: page.locator("span:has-text('Workspace (JSON Editor)')") }).first();
+    await workspaceBtn.click();
+    await page.waitForFunction(() => window.currentEditor !== undefined, { timeout: 15000 });
 
     // --- STEP 2: Format / Beautify Action ---
     console.log("Testing JSON Format (Beautify) action...");
@@ -209,7 +222,7 @@ async function run() {
     const newWorkspaceBtn = page.locator("button[title='New Blob']");
     await newWorkspaceBtn.click();
     await page.waitForSelector(':has-text("Created new blank workspace")');
-    await page.waitForURL(`${BASE_URL}/`);
+    await page.waitForURL(url => url.pathname === "/", { timeout: 10000 });
     recordResult("New Blank Workspace Flow", true);
 
     // --- STEP 13: Sidebar List Selection & Search ---
@@ -245,8 +258,11 @@ async function run() {
 
     // --- STEP 15: Sign Out ---
     console.log("Testing Sign Out Action...");
+    const userAvatar = page.locator("div[title^='Logged in as Jane Doe']");
+    await userAvatar.hover();
+    await delay(200);
     const signOutBtn = page.locator("button[title='Sign Out']");
-    await signOutBtn.click();
+    await signOutBtn.click({ force: true });
     await page.waitForSelector(':has-text("Signed out successfully")');
 
     const signInLinkVisible = await page.locator("a[title='Sign In / Sign Up']").isVisible();

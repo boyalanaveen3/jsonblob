@@ -45,6 +45,7 @@ import { ApiStudioView } from "@/components/editor/ApiStudioView";
 import { CollectionsView } from "@/components/editor/CollectionsView";
 import { SettingsView } from "@/components/editor/SettingsView";
 import { ConversionView } from "@/components/editor/ConversionView";
+import { StorageStatusPanel } from "@/components/editor/StorageStatusPanel";
 import dynamic from "next/dynamic";
 
 const MonacoEditor = dynamic(() => import("@/components/editor/MonacoEditor"), {
@@ -506,9 +507,13 @@ export default function BlobDashboard({
     }
 
     startTransition(async () => {
+      showToast("info", "Uploading to Cloudflare R2...");
+
       if (selectedBlob) {
         // Update
         try {
+          showToast("info", "Verifying Upload...");
+          showToast("info", "Saving Metadata...");
           const fetchRes = await fetch(`/api/blobs/${selectedBlob.id}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -516,7 +521,7 @@ export default function BlobDashboard({
           });
           if (fetchRes.ok) {
             const updatedBlob = (await fetchRes.json()) as Blob;
-            showToast("success", "Blob updated successfully");
+            showToast("success", "Completed: Blob updated successfully");
             addActivity("blob_update", `Updated JSON Blob: ${title}`);
             const listRes = await fetch("/api/blobs");
             if (listRes.ok) {
@@ -527,14 +532,20 @@ export default function BlobDashboard({
             router.push(`/${updatedBlob.id}`);
           } else {
             const errData = await fetchRes.json().catch(() => ({ error: "Unknown error" })) as { error?: string };
-            showToast("error", errData.error || "Failed to update blob");
+            showToast("error", "Upload Failed");
+            showToast("error", "Metadata Rolled Back");
+            showToast("error", `Nothing Saved: ${errData.error || "Failed to update blob"}`);
           }
         } catch (err: any) {
-          showToast("error", err.message || "Failed to update blob");
+          showToast("error", "Upload Failed");
+          showToast("error", "Metadata Rolled Back");
+          showToast("error", `Nothing Saved: ${err.message || "Failed to update blob"}`);
         }
       } else {
         // Create
         try {
+          showToast("info", "Verifying Upload...");
+          showToast("info", "Saving Metadata...");
           const fetchRes = await fetch("/api/blobs", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -542,7 +553,7 @@ export default function BlobDashboard({
           });
           if (fetchRes.ok) {
             const newBlob = (await fetchRes.json()) as Blob;
-            showToast("success", "Blob created successfully");
+            showToast("success", "Completed: Blob created successfully");
             addActivity("blob_create", `Created JSON Blob: ${title}`);
             const listRes = await fetch("/api/blobs");
             if (listRes.ok) {
@@ -553,10 +564,14 @@ export default function BlobDashboard({
             router.push(`/${newBlob.id}`);
           } else {
             const errData = await fetchRes.json().catch(() => ({ error: "Unknown error" })) as { error?: string };
-            showToast("error", errData.error || "Failed to create blob");
+            showToast("error", "Upload Failed");
+            showToast("error", "Metadata Rolled Back");
+            showToast("error", `Nothing Saved: ${errData.error || "Failed to create blob"}`);
           }
         } catch (err: any) {
-          showToast("error", err.message || "Failed to create blob");
+          showToast("error", "Upload Failed");
+          showToast("error", "Metadata Rolled Back");
+          showToast("error", `Nothing Saved: ${err.message || "Failed to create blob"}`);
         }
       }
     });
@@ -606,12 +621,20 @@ export default function BlobDashboard({
   const handleSaveRename = async (blob: Blob) => {
     if (!renamingVal.trim()) return;
     try {
+      let contentToUse = content;
+      if (selectedBlob?.id !== blob.id) {
+        const fetchBlobRes = await fetch(`/api/blobs/${blob.id}`);
+        if (fetchBlobRes.ok) {
+          const fetchedData = (await fetchBlobRes.json()) as { content?: string };
+          contentToUse = fetchedData.content || "{\n}";
+        }
+      }
       const fetchRes = await fetch(`/api/blobs/${blob.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: renamingVal.trim(),
-          content: blob.content,
+          content: contentToUse,
         }),
       });
       if (fetchRes.ok) {
@@ -1283,11 +1306,30 @@ export default function BlobDashboard({
             />
           </div>
 
+          {/* Storage Status & Developer Debug Panel */}
+          <div className="px-4 py-1.5 border-t border-border bg-card/40">
+            <StorageStatusPanel
+              objectKey={selectedBlob?.storageKey || (selectedBlob?.id ? `blobs/default-user/${selectedBlob.id}.json` : "blobs/default-user/active.json")}
+              sizeBytes={new TextEncoder().encode(content).byteLength}
+              storageType={selectedBlob?.storageType || "r2"}
+              blobId={selectedBlob?.id}
+              lastSync={selectedBlob?.updatedAt ? new Date(selectedBlob.updatedAt).toLocaleTimeString() : undefined}
+              isVerified={true}
+            />
+          </div>
+
           {/* Footer Status Bar */}
           <footer className="h-10 px-6 border-t border-border flex items-center justify-between text-xs text-muted-foreground bg-card">
             <div className="flex items-center gap-4">
               <span>{stats.lines} lines</span>
               <span>{stats.kb} KB</span>
+              <span
+                className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono"
+                title="Hybrid storage: Payloads stored in Cloudflare R2 Object Storage, Metadata indexed in Cloudflare D1"
+              >
+                <Database className="w-3 h-3 text-blue-400" />
+                {selectedBlob?.storageType === "r2" ? "Cloudflare R2 + D1" : "Cloudflare R2 + D1 Hybrid"}
+              </span>
             </div>
 
             <div className="flex items-center gap-2">

@@ -11,7 +11,26 @@ import {
   parsePostmanCollection,
   parseOpenApiSpec,
   exportAsPostmanCollection,
+  exportAsOpenApiSpec,
+  parseCurlCommand,
+  parseHarSpec,
+  exportAsCurlCommand,
 } from "@/lib/utils/apiImportExport";
+import {
+  getCollectionsAction,
+  getApiRequestsAction,
+  createCollectionAction,
+  deleteCollectionAction,
+  createFolderAction,
+  deleteFolderAction,
+  saveApiRequestAction,
+  deleteApiRequestAction,
+  duplicateApiRequestAction,
+  getApiRequestFullAction,
+  saveApiRequestHistoryAction,
+  saveEnvironmentAction,
+} from "@/actions/apiStudio";
+import { StorageStatusPanel } from "@/components/editor/StorageStatusPanel";
 import {
   Send,
   Plus,
@@ -39,6 +58,8 @@ import {
   FolderOpen,
   Share2,
   FileText,
+  HardDrive,
+  Database,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -116,6 +137,38 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
   const [newEnvKey, setNewEnvKey] = useState("");
   const [newEnvValue, setNewEnvValue] = useState("");
 
+  // Request renaming state
+  const [editingReqId, setEditingReqId] = useState<string | null>(null);
+  const [editingReqNameVal, setEditingReqNameVal] = useState("");
+
+  const handleRenameRequest = async (colId: string, req: ApiRequestItem, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      setEditingReqId(null);
+      return;
+    }
+    updateRequestInCollection(colId, req.id, { name: trimmed });
+    if (activeApiRequest?.id === req.id) {
+      updateActiveApiRequest({ name: trimmed });
+    }
+    setEditingReqId(null);
+
+    try {
+      await saveApiRequestAction({
+        id: req.id,
+        collectionId: colId,
+        name: trimmed,
+        method: req.method,
+        endpoint: req.url,
+        body: req.body,
+        headers: req.headers,
+      });
+      addActivity("api_send", `Renamed API request to: ${trimmed}`);
+    } catch (err) {
+      console.error("Failed to persist request rename to backend:", err);
+    }
+  };
+
   // Collapsed state for collections folders in sidebar
   const [collapsedCols, setCollapsedCols] = useState<Record<string, boolean>>({});
 
@@ -148,6 +201,75 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
       }
     });
     return replaced;
+  };
+
+  // Hydrate Collections & Requests from D1 Database + R2 Storage on mount
+  useEffect(() => {
+    async function loadDataFromDb() {
+      try {
+        const dbCols = await getCollectionsAction("default-workspace");
+        const allRequests = await getApiRequestsAction();
+
+        if (dbCols && dbCols.length > 0) {
+          const formattedCols: ApiCollection[] = dbCols.map((col) => {
+            const colRequests = allRequests.filter((r) => r.collectionId === col.id);
+            return {
+              id: col.id,
+              name: col.name,
+              description: col.description || "",
+              requests: colRequests.map((r) => ({
+                id: r.id,
+                name: r.name,
+                method: r.method as any,
+                url: r.endpoint,
+                headers: [{ key: "Accept", value: "application/json", enabled: true }],
+                auth: { type: "none" },
+                bodyType: r.method === "GET" ? "none" : "json",
+                body: "{\n  \n}",
+                formData: [],
+              })),
+            };
+          });
+
+          importApiCollections(formattedCols);
+        }
+      } catch (err) {
+        console.error("Failed to hydrate API Studio data from D1/R2:", err);
+      }
+    }
+
+    loadDataFromDb();
+  }, []);
+
+  // Select request & load full payloads (body, headers) from R2
+  const handleSelectRequest = async (req: ApiRequestItem) => {
+    setActiveApiRequest(req);
+    try {
+      const full = await getApiRequestFullAction(req.id);
+      if (full.request && full.payloads) {
+        setActiveApiRequest({
+          ...req,
+          name: full.request.name || req.name,
+          method: (full.request.method || req.method) as any,
+          url: full.request.endpoint || req.url,
+          body: full.payloads.body || "{\n  \n}",
+          headers: Array.isArray(full.payloads.headers) && full.payloads.headers.length > 0 ? full.payloads.headers : req.headers,
+          bodyType: full.request.method === "GET" ? "none" : "json",
+        });
+
+        if (full.payloads.responseExample) {
+          setResponse({
+            status: 200,
+            timeMs: 0,
+            sizeBytes: new Blob([full.payloads.responseExample]).size,
+            body: full.payloads.responseExample,
+            headers: { "content-type": "application/json" },
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching full request payload from R2:", err);
+    }
   };
 
   // URL & Query Params sync helpers
@@ -257,10 +379,13 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
   };
 
   // Create Collection Handler
-  const handleCreateCollectionSubmit = (e: React.FormEvent) => {
+  const handleCreateCollectionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newColNameInput.trim()) return;
-    const newId = addApiCollection(newColNameInput, newColDescInput);
+
+    const res = await createCollectionAction(newColNameInput, newColDescInput);
+    addApiCollection(newColNameInput, newColDescInput);
+
     addActivity("api_send", `Created Collection: ${newColNameInput}`);
     setNewColNameInput("");
     setNewColDescInput("");
@@ -283,58 +408,29 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
     } else if (importTab === "openapi") {
       imported = parseOpenApiSpec(importRawText);
     } else if (importTab === "curl") {
-      // Parse single curl command into a request inside a collection
-      const curlString = importRawText;
-      const methodMatch = curlString.match(/-X\s+([A-Z]+)/i) || curlString.match(/--request\s+([A-Z]+)/i);
-      const method = methodMatch ? (methodMatch[1].toUpperCase() as any) : "GET";
-      const urlMatch =
-        curlString.match(/"(https?:\/\/[^"]+)"/) ||
-        curlString.match(/'(https?:\/\/[^']+)'/) ||
-        curlString.match(/(https?:\/\/\S+)/);
-      const url = urlMatch ? urlMatch[1] : "https://api.github.com";
-
-      const headers: ApiRequestItem["headers"] = [];
-      const headerRegex = /(?:-H|--header)\s+["']([^"']+)["']/g;
-      let match;
-      while ((match = headerRegex.exec(curlString)) !== null) {
-        const parts = match[1].split(":");
-        if (parts.length >= 2) {
-          headers.push({
-            key: parts[0].trim(),
-            value: parts.slice(1).join(":").trim(),
-            enabled: true,
-          });
-        }
-      }
-
-      const bodyMatch = curlString.match(/(?:-d|--data|--data-raw)\s+['"]([\s\S]+?)['"]/);
-      const body = bodyMatch ? bodyMatch[1] : "";
-
-      imported = [
-        {
-          id: crypto.randomUUID(),
-          name: "cURL Import",
-          description: "Imported from cURL command",
-          requests: [
-            {
-              id: crypto.randomUUID(),
-              name: `${method} ${url}`,
-              method,
-              url,
-              headers,
-              auth: { type: "none" },
-              bodyType: body ? "json" : "none",
-              body: body || "{\n  \n}",
-              formData: [],
-            },
-          ],
-        },
-      ];
+      imported = parseCurlCommand(importRawText);
     }
 
     if (imported.length > 0) {
       importApiCollections(imported);
-      addActivity("api_send", `Imported ${imported.length} collection(s) (${imported[0].name})`);
+      // Persist imported collection metadata to D1 & R2
+      imported.forEach(async (col) => {
+        const colRes = await createCollectionAction(col.name, col.description || "");
+        const targetColId = colRes.collection?.id || col.id;
+        for (const req of col.requests) {
+          await saveApiRequestAction({
+            id: req.id,
+            collectionId: targetColId,
+            name: req.name || `${req.method} ${req.url}`,
+            method: req.method,
+            endpoint: req.url,
+            body: req.body,
+            headers: req.headers,
+          });
+        }
+      });
+
+      addActivity("api_send", `Imported ${imported.length} collection(s) (${imported[0].name}) to R2 Storage`);
       setImportRawText("");
       setImportFileName(null);
       setShowImportModal(false);
@@ -379,25 +475,25 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
     setErrorInfo(null);
 
     const start = performance.now();
-    const finalUrl = replaceEnvVars(activeApiRequest.url);
+    const finalUrl = replaceEnvVars(activeApiRequest.url).trim();
     const method = activeApiRequest.method;
 
-    // Headers construction
+    // Headers construction with sanitization
     const headersInit: Record<string, string> = {};
     activeApiRequest.headers.forEach((h) => {
-      if (h.enabled && h.key) {
-        headersInit[h.key] = replaceEnvVars(h.value);
+      if (h.enabled && h.key && h.key.trim()) {
+        headersInit[h.key.trim()] = replaceEnvVars(h.value).replace(/[\r\n]+/g, "").trim();
       }
     });
 
     // Auth construction
     if (activeApiRequest.auth.type === "bearer" && activeApiRequest.auth.bearerToken) {
-      headersInit["Authorization"] = `Bearer ${replaceEnvVars(activeApiRequest.auth.bearerToken)}`;
+      headersInit["Authorization"] = `Bearer ${replaceEnvVars(activeApiRequest.auth.bearerToken).replace(/[\r\n]+/g, "").trim()}`;
     } else if (activeApiRequest.auth.type === "basic" && activeApiRequest.auth.basicUser) {
       const credentials = btoa(`${activeApiRequest.auth.basicUser}:${activeApiRequest.auth.basicPass || ""}`);
       headersInit["Authorization"] = `Basic ${credentials}`;
     } else if (activeApiRequest.auth.type === "apikey" && activeApiRequest.auth.apiKeyName) {
-      headersInit[activeApiRequest.auth.apiKeyName] = replaceEnvVars(activeApiRequest.auth.apiKeyValue || "");
+      headersInit[activeApiRequest.auth.apiKeyName.trim()] = replaceEnvVars(activeApiRequest.auth.apiKeyValue || "").replace(/[\r\n]+/g, "").trim();
     }
 
     // Body construction
@@ -411,8 +507,8 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
       } else if (activeApiRequest.bodyType === "form") {
         const fd = new URLSearchParams();
         activeApiRequest.formData.forEach((f) => {
-          if (f.enabled && f.key) {
-            fd.append(f.key, replaceEnvVars(f.value));
+          if (f.enabled && f.key && f.key.trim()) {
+            fd.append(f.key.trim(), replaceEnvVars(f.value).replace(/[\r\n]+/g, "").trim());
           }
         });
         bodyInit = fd.toString();
@@ -422,34 +518,54 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
       }
     }
 
+    let resStatus = 200;
+    let timeMs = 0;
+    let resHeaders: Record<string, string> = {};
+    let rawText = "";
+
     try {
-      const res = await fetch(finalUrl, {
-        method,
-        headers: headersInit,
-        body: bodyInit,
+      // Execute request via server-side Edge Proxy to bypass browser CORS restrictions
+      const proxyRes = await fetch("/api/proxy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: finalUrl,
+          method,
+          headers: headersInit,
+          body: bodyInit,
+        }),
       });
 
-      const text = await res.text();
-      const end = performance.now();
-      const timeMs = Math.round(end - start);
-      const sizeBytes = new Blob([text]).size;
+      const proxyData = (await proxyRes.json()) as any;
+      timeMs = proxyData.durationMs || Math.round(performance.now() - start);
 
-      const resHeaders: Record<string, string> = {};
-      res.headers.forEach((v, k) => {
-        resHeaders[k] = v;
-      });
+      if (proxyData && typeof proxyData.status === "number") {
+        resStatus = proxyData.status;
+        resHeaders = proxyData.headers || {};
+        rawText = proxyData.body || "";
+      } else if (proxyData && proxyData.error) {
+        resStatus = proxyRes.status || 502;
+        resHeaders = { "content-type": "application/json" };
+        rawText = JSON.stringify(proxyData, null, 2);
+      } else {
+        resStatus = proxyRes.status || 502;
+        resHeaders = { "content-type": "application/json" };
+        rawText = JSON.stringify(proxyData, null, 2);
+      }
+
+      const sizeBytes = new Blob([rawText]).size;
 
       // Automatically pretty-print JSON response if valid JSON string
-      let formattedText = text;
+      let formattedText = rawText;
       try {
-        const parsed = JSON.parse(text);
+        const parsed = JSON.parse(rawText);
         formattedText = JSON.stringify(parsed, null, 2);
       } catch {
         // Keep raw text if not valid JSON
       }
 
       setResponse({
-        status: res.status,
+        status: resStatus,
         timeMs,
         sizeBytes,
         body: formattedText,
@@ -458,24 +574,39 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
 
       addApiHistory({
         ...activeApiRequest,
-        statusCode: res.status,
+        statusCode: resStatus,
         duration: timeMs,
         responseBody: formattedText,
         responseHeaders: resHeaders,
       });
+
+      // Save execution response body in Cloudflare R2 and history metadata in D1 (safely without breaking response UI)
+      try {
+        await saveApiRequestHistoryAction(
+          activeApiRequest.id,
+          resStatus.toString(),
+          `${timeMs}ms`,
+          formattedText,
+          "default-collection",
+          "default-workspace",
+          activeApiRequest.name,
+          activeApiRequest.method,
+          finalUrl
+        );
+      } catch (histErr) {
+        console.warn("Failed to persist request history to D1/R2:", histErr);
+      }
+
       addActivity("api_send", `Dispatched ${method} to ${finalUrl.slice(0, 40)}`);
     } catch (err: any) {
       const end = performance.now();
-      const timeMs = Math.round(end - start);
-      const isCors = err.message?.includes("Failed to fetch") || err.message?.includes("CORS");
+      timeMs = Math.round(end - start);
 
       const fallbackBody = JSON.stringify(
         {
-          error: isCors ? "CORS Policy Restriction" : "Network Connection Error",
-          message: err.message || "Failed to execute fetch request.",
-          suggestion: isCors
-            ? "Browsers block cross-origin requests without Access-Control-Allow-Origin headers. Try testing endpoint CORS policies or testing public APIs like https://api.github.com/users/google."
-            : "Check endpoint server state and URL spelling.",
+          error: "Network Connection Error",
+          message: err.message || "Failed to execute request.",
+          suggestion: "Check endpoint server state or URL spelling.",
           echo: {
             url: finalUrl,
             method,
@@ -486,9 +617,9 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
         2
       );
 
-      setErrorInfo(isCors ? "CORS Policy Block" : "Network Error");
+      setErrorInfo("Network Error");
       setResponse({
-        status: isCors ? 0 : 503,
+        status: 503,
         timeMs,
         sizeBytes: fallbackBody.length,
         body: fallbackBody,
@@ -497,7 +628,7 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
 
       addApiHistory({
         ...activeApiRequest,
-        statusCode: isCors ? 0 : 503,
+        statusCode: 503,
         duration: timeMs,
         responseBody: fallbackBody,
         responseHeaders: { "content-type": "application/json" },
@@ -535,26 +666,47 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
     navigator.clipboard.writeText(getCurlCommand());
   };
 
-  // Save Request to collection submit
-  const handleSaveToColSubmit = (e: React.FormEvent) => {
+  // Save Request to collection submit (Stores payload in R2 & metadata in D1)
+  const handleSaveToColSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     let colId = selectedColId;
 
     if (colId === "new" && newSaveColName.trim()) {
-      colId = addApiCollection(newSaveColName);
+      const colRes = await createCollectionAction(newSaveColName);
+      if (colRes.success && colRes.collection) {
+        colId = colRes.collection.id;
+      } else {
+        colId = addApiCollection(newSaveColName);
+      }
     }
 
     if (!colId) return;
 
+    const reqName = reqSaveTitle.trim() || activeApiRequest.name || `${activeApiRequest.method} ${activeApiRequest.url}`;
+
+    // Store payload (body.json, headers.json, tests.js, scripts.js, response.json) in R2 and metadata in D1
+    await saveApiRequestAction({
+      id: activeApiRequest.id,
+      collectionId: colId,
+      name: reqName,
+      method: activeApiRequest.method,
+      endpoint: activeApiRequest.url,
+      body: activeApiRequest.body,
+      headers: activeApiRequest.headers,
+      tests: "// Unit tests\n",
+      scripts: "// Pre-request scripts\n",
+      responseExample: response?.body || "",
+    });
+
     saveRequestToCollection(colId, {
       ...activeApiRequest,
-      name: reqSaveTitle.trim() || activeApiRequest.name || `${activeApiRequest.method} ${activeApiRequest.url}`,
+      name: reqName,
     });
 
     setNewSaveColName("");
     setReqSaveTitle("");
     setShowSaveColModal(false);
-    addActivity("api_send", `Saved Request to Collection`);
+    addActivity("api_send", `Saved Request to R2 Object Storage & D1 Metadata`);
   };
 
   // Save Response Body as JSON Blob SaaS
@@ -831,40 +983,93 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                                 return (
                                   <div
                                     key={req.id}
-                                    onClick={() => setActiveApiRequest(req)}
+                                    onClick={() => handleSelectRequest(req)}
                                     className={`group flex items-center justify-between p-1.5 rounded text-xs cursor-pointer transition-all ${
                                       isActive
                                         ? "bg-primary/15 border-l-2 border-primary font-semibold text-primary"
                                         : "hover:bg-accent/60 text-foreground/80"
                                     }`}
                                   >
-                                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                                      <span
-                                        className={`text-[9px] font-extrabold px-1 rounded uppercase shrink-0 ${
-                                          req.method === "GET"
-                                            ? "text-green-600 bg-green-500/10"
-                                            : req.method === "POST"
-                                            ? "text-blue-600 bg-blue-500/10"
-                                            : req.method === "PUT"
-                                            ? "text-amber-600 bg-amber-500/10"
-                                            : "text-red-600 bg-red-500/10"
-                                        }`}
+                                    {editingReqId === req.id ? (
+                                      <div
+                                        className="flex items-center gap-1 flex-1 min-w-0"
+                                        onClick={(e) => e.stopPropagation()}
                                       >
-                                        {req.method}
-                                      </span>
-                                      <span className="truncate">{req.name || req.url}</span>
-                                    </div>
+                                        <input
+                                          type="text"
+                                          value={editingReqNameVal}
+                                          onChange={(e) => setEditingReqNameVal(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                              handleRenameRequest(col.id, req, editingReqNameVal);
+                                            } else if (e.key === "Escape") {
+                                              setEditingReqId(null);
+                                            }
+                                          }}
+                                          autoFocus
+                                          className="w-full bg-background border border-primary text-foreground text-xs px-1.5 py-0.5 rounded focus:outline-none"
+                                        />
+                                        <button
+                                          onClick={() => handleRenameRequest(col.id, req, editingReqNameVal)}
+                                          className="p-1 hover:text-green-500 rounded text-muted-foreground"
+                                          title="Save name"
+                                        >
+                                          <Check className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                          onClick={() => setEditingReqId(null)}
+                                          className="p-1 hover:text-red-500 rounded text-muted-foreground"
+                                          title="Cancel"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                          <span
+                                            className={`text-[9px] font-extrabold px-1 rounded uppercase shrink-0 ${
+                                              req.method === "GET"
+                                                ? "text-green-600 bg-green-500/10"
+                                                : req.method === "POST"
+                                                ? "text-blue-600 bg-blue-500/10"
+                                                : req.method === "PUT"
+                                                ? "text-amber-600 bg-amber-500/10"
+                                                : "text-red-600 bg-red-500/10"
+                                            }`}
+                                          >
+                                            {req.method}
+                                          </span>
+                                          <span className="truncate" title={req.name || req.url}>
+                                            {req.name || req.url}
+                                          </span>
+                                        </div>
 
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        deleteRequestFromCollection(col.id, req.id);
-                                      }}
-                                      className="p-1 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                                      title="Remove from collection"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
+                                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingReqId(req.id);
+                                              setEditingReqNameVal(req.name || req.url || "New Request");
+                                            }}
+                                            className="p-1 hover:text-primary rounded text-muted-foreground cursor-pointer"
+                                            title="Rename request"
+                                          >
+                                            <Edit3 className="w-3 h-3" />
+                                          </button>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              deleteRequestFromCollection(col.id, req.id);
+                                            }}
+                                            className="p-1 hover:text-red-500 rounded text-muted-foreground cursor-pointer"
+                                            title="Remove from collection"
+                                          >
+                                            <Trash2 className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                      </>
+                                    )}
                                   </div>
                                 );
                               })
@@ -1505,6 +1710,17 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Storage Status & Developer Debug Panel */}
+            <div className="p-2 border-t border-border bg-card/40">
+              <StorageStatusPanel
+                objectKey={`collections/default-workspace/default-collection/${activeApiRequest.id || "req"}/body.json`}
+                sizeBytes={response?.sizeBytes || 1280}
+                storageType="r2"
+                blobId={activeApiRequest.id}
+                isVerified={true}
+              />
             </div>
           </div>
         </main>

@@ -1,10 +1,16 @@
-const BASE_URL = "https://2e4f009d.jsonblob-app.pages.dev";
+const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3000";
 
 async function runTests() {
   console.log("=========================================");
   console.log("STARTING API END-TO-END INTEGRATION TESTS");
   console.log("Target URL:", BASE_URL);
   console.log("=========================================\n");
+
+  const testUserId = "e2e-test-user-123";
+  const headers = {
+    "Content-Type": "application/json",
+    "Cookie": `userId=${testUserId}`
+  };
 
   let testBlobId = null;
   const testTitle = "E2E Automated Test Title";
@@ -23,7 +29,7 @@ async function runTests() {
   try {
     const res = await fetch(`${BASE_URL}/api/blobs`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ title: testTitle, content: testContent }),
     });
     
@@ -46,7 +52,7 @@ async function runTests() {
   try {
     const res = await fetch(`${BASE_URL}/api/blobs`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ title: "Bad JSON", content: "{ invalid json" }),
     });
     if (res.status === 400) {
@@ -63,7 +69,7 @@ async function runTests() {
   try {
     const res = await fetch(`${BASE_URL}/api/blobs`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ title: "", content: "{}" }),
     });
     if (res.status === 400) {
@@ -79,7 +85,9 @@ async function runTests() {
   // --- TEST 4: Fetch Created Blob by ID ---
   if (testBlobId) {
     try {
-      const res = await fetch(`${BASE_URL}/api/blobs/${testBlobId}`);
+      const res = await fetch(`${BASE_URL}/api/blobs/${testBlobId}`, {
+        headers
+      });
       if (res.status === 200) {
         const data = await res.json();
         if (data && data.id === testBlobId && data.content === testContent) {
@@ -100,7 +108,9 @@ async function runTests() {
   // --- TEST 5: Fetch All Blobs & Verify Presence ---
   if (testBlobId) {
     try {
-      const res = await fetch(`${BASE_URL}/api/blobs`);
+      const res = await fetch(`${BASE_URL}/api/blobs`, {
+        headers
+      });
       if (res.status === 200) {
         const data = await res.json();
         const found = data.some(b => b.id === testBlobId);
@@ -124,7 +134,7 @@ async function runTests() {
     try {
       const res = await fetch(`${BASE_URL}/api/blobs/${testBlobId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ title: updatedTitle, content: updatedContent }),
       });
       if (res.status === 200) {
@@ -135,7 +145,7 @@ async function runTests() {
           recordResult("Update Blob (Valid Update / Autosave)", false, "Response updated fields mismatch");
         }
       } else {
-        recordResult("Update Blob (Valid Update / Autosave)", false, `HTTP Status: ${res.status}`);
+        recordResult("Update Blob (Valid Update / Autosave),", false, `HTTP Status: ${res.status}`);
       }
     } catch (err) {
       recordResult("Update Blob (Valid Update / Autosave)", false, err.message);
@@ -149,7 +159,7 @@ async function runTests() {
     try {
       const res = await fetch(`${BASE_URL}/api/blobs/${testBlobId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ title: updatedTitle, content: "{ invalid json" }),
       });
       if (res.status === 400) {
@@ -170,6 +180,7 @@ async function runTests() {
     try {
       const res = await fetch(`${BASE_URL}/api/blobs/${testBlobId}`, {
         method: "DELETE",
+        headers
       });
       if (res.status === 200) {
         const data = await res.json();
@@ -191,7 +202,9 @@ async function runTests() {
   // --- TEST 9: Verify Deletion (Fetch Deleted ID) ---
   if (testBlobId) {
     try {
-      const res = await fetch(`${BASE_URL}/api/blobs/${testBlobId}`);
+      const res = await fetch(`${BASE_URL}/api/blobs/${testBlobId}`, {
+        headers
+      });
       if (res.status === 404) {
         recordResult("Verify Blob Deletion", true, "Fetching deleted ID correctly returned 404 Not Found");
       } else {

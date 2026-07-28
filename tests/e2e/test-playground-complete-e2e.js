@@ -3,7 +3,7 @@ const path = require("path");
 const fs = require("fs");
 
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3000";
-const SCREENSHOT_DIR = "/home/bnaveen/.gemini/antigravity/brain/dcbaa2fb-67f0-45da-9af4-0e7ae6d00d6c";
+const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR || path.join(__dirname, "artifacts");
 
 // Ensure screenshot directory exists
 if (!fs.existsSync(SCREENSHOT_DIR)) {

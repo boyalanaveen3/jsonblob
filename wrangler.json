@@ -8,6 +8,16 @@
       "database_id": "1ad3573e-3f03-4906-8599-0b66d06cdc0f"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "STORAGE",
+      "bucket_name": "devworkspace"
+    },
+    {
+      "binding": "JSON_BLOB_BUCKET",
+      "bucket_name": "devworkspace"
+    }
+  ],
   "compatibility_date": "2026-07-14",
   "compatibility_flags": [
     "nodejs_compat"

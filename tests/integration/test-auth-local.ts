@@ -1,4 +1,4 @@
-import { signUpAction, signInAction } from "./actions/auth";
+import { signUpAction, signInAction } from "@/actions/auth";
 
 async function testAuth() {
   console.log("=========================================");
