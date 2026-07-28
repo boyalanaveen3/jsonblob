@@ -253,7 +253,7 @@ export default function BlobDashboard({
     }
   }, [content]);
 
-  // --- Autosave Effect ---
+  // --- Autosave Effect (Only runs for existing saved blobs) ---
   useEffect(() => {
     if (!autosaveEnabled) return;
     if (!title.trim() || !isValidJson) return;
@@ -263,58 +263,36 @@ export default function BlobDashboard({
       if (params.get("oauth") === "success" || params.get("view") === "sql") return;
     }
 
+    // DO NOT auto-create new blobs automatically while typing!
+    // New unsaved blobs must be saved explicitly via the Save button.
+    if (!selectedBlob) return;
+
     // Check if the content is actually different from the current saved state
-    if (selectedBlob && content === selectedBlob.content && title === selectedBlob.title) return;
+    if (content === selectedBlob.content && title === selectedBlob.title) return;
 
     const delayDebounce = setTimeout(() => {
       setIsAutosaving(true);
       startTransition(async () => {
         try {
-          if (selectedBlob) {
-            // Update existing blob
-            const fetchRes = await fetch(`/api/blobs/${selectedBlob.id}`, {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ title, content }),
-            });
-            if (fetchRes.ok) {
-              const updatedBlob = (await fetchRes.json()) as Blob;
-              const listRes = await fetch("/api/blobs");
-              if (listRes.ok) {
-                const updatedList = (await listRes.json()) as Blob[];
-                setBlobsList(updatedList);
-              }
-              setSelectedBlob(updatedBlob);
-            } else {
-              const errData = await fetchRes.json().catch(() => ({ error: "Unknown error" })) as { error?: string };
-              console.error("Autosave failed:", errData.error);
-              if (fetchRes.status !== 401) {
-                showToast("error", `Autosave failed: ${errData.error || "Unknown error"}`);
-              }
+          // Update existing blob
+          const fetchRes = await fetch(`/api/blobs/${selectedBlob.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title, content }),
+          });
+          if (fetchRes.ok) {
+            const updatedBlob = (await fetchRes.json()) as Blob;
+            const listRes = await fetch("/api/blobs");
+            if (listRes.ok) {
+              const updatedList = (await listRes.json()) as Blob[];
+              setBlobsList(updatedList);
             }
+            setSelectedBlob(updatedBlob);
           } else {
-            // Create new blob (Register & Redirect)
-            const fetchRes = await fetch("/api/blobs", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ title, content }),
-            });
-            if (fetchRes.ok) {
-              const newBlob = (await fetchRes.json()) as Blob;
-              showToast("success", "Autosaved & registered workspace");
-              const listRes = await fetch("/api/blobs");
-              if (listRes.ok) {
-                const updatedList = (await listRes.json()) as Blob[];
-                setBlobsList(updatedList);
-              }
-              setSelectedBlob(newBlob);
-              router.push(`/${newBlob.id}`);
-            } else {
-              const errData = await fetchRes.json().catch(() => ({ error: "Unknown error" })) as { error?: string };
-              console.error("Autosave creation failed:", errData.error);
-              if (fetchRes.status !== 401) {
-                showToast("error", `Autosave failed: ${errData.error || "Unknown error"}`);
-              }
+            const errData = await fetchRes.json().catch(() => ({ error: "Unknown error" })) as { error?: string };
+            console.error("Autosave failed:", errData.error);
+            if (fetchRes.status !== 401) {
+              showToast("error", `Autosave failed: ${errData.error || "Unknown error"}`);
             }
           }
         } catch (err: any) {
@@ -324,10 +302,10 @@ export default function BlobDashboard({
           setIsAutosaving(false);
         }
       });
-    }, 1500);
+    }, 2000);
 
     return () => clearTimeout(delayDebounce);
-  }, [content, title, autosaveEnabled, selectedBlob, isValidJson, router]);
+  }, [content, title, autosaveEnabled, selectedBlob, isValidJson, activeView]);
 
   const handleSignOut = async () => {
     try {
@@ -1100,7 +1078,14 @@ export default function BlobDashboard({
               </button>
               <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 <FileJson className="w-4 h-4 text-primary shrink-0" />
-                <span className="font-semibold text-sm truncate">{title}</span>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Enter Blob Title..."
+                  className="bg-transparent hover:bg-accent/50 focus:bg-accent text-foreground font-semibold text-sm px-2 py-0.5 rounded border border-transparent focus:border-border outline-none transition-colors max-w-[200px] sm:max-w-[280px] truncate"
+                  title="Click to edit Blob Title"
+                />
                 {isAutosaving && (
                   <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-accent px-1.5 py-0.5 rounded font-mono shrink-0 select-none">
                     <Loader2 className="w-3 h-3 animate-spin text-primary" />
@@ -1112,12 +1097,23 @@ export default function BlobDashboard({
 
             {/* Primary Action Controls */}
             <div className="flex items-center gap-1.5 shrink-0">
+              {/* Auto-Save Toggle */}
+              <label className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none px-2.5 py-1.5 border border-border rounded-md hover:bg-accent transition-colors" title="Toggle automatic saving for existing blobs">
+                <input
+                  type="checkbox"
+                  checked={autosaveEnabled}
+                  onChange={(e) => setAutosaveEnabled(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded text-primary border-border focus:ring-primary accent-primary cursor-pointer"
+                />
+                <span className="text-[11px] font-medium">Auto-Save</span>
+              </label>
+
               {/* Save / Sync */}
               <button
                 onClick={handleSave}
                 disabled={isPending || !title.trim() || !isValidJson}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground hover:opacity-95 disabled:opacity-50 text-xs font-bold rounded-md transition-all shadow-sm shadow-primary/10 cursor-pointer"
-                title="Save updates"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-primary text-primary-foreground hover:opacity-95 disabled:opacity-50 text-xs font-bold rounded-md transition-all shadow-sm shadow-primary/10 cursor-pointer"
+                title="Save updates (Ctrl+S)"
               >
                 {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                 <span>Save</span>
