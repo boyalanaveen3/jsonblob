@@ -154,13 +154,7 @@ export default function BlobDashboard({
     }
   }, [userName]);
 
-  // Enforce initial and auth-based views
-  useEffect(() => {
-    if (defaultView) {
-      setActiveView(defaultView);
-    }
-  }, [defaultView, setActiveView]);
-
+  // Enforce auth-based views
   useEffect(() => {
     if (!userName && activeView === "dashboard") {
       setActiveView("workspace");
@@ -170,27 +164,37 @@ export default function BlobDashboard({
   // Transitions for async operations
   const [isPending, startTransition] = useTransition();
 
-  // --- Sync State with URL Route changes ---
+  // --- Sync View and State with URL Route changes ---
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get("view");
       const oauthParam = params.get("oauth");
+
       if (viewParam === "sql" || oauthParam === "success") {
         setActiveView("sql");
-        // Clean up OAuth params from URL without triggering navigation
-        const cleanUrl = window.location.pathname;
-        window.history.replaceState({}, "", cleanUrl + "?view=sql&provider=cloudflare-d1");
+        if (oauthParam === "success") {
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, "", cleanUrl + "?view=sql&provider=cloudflare-d1");
+        }
+        return;
+      }
+
+      if (viewParam && ["workspace", "dashboard", "sql", "api", "collections", "settings", "conversion"].includes(viewParam)) {
+        setActiveView(viewParam as ViewType);
         return;
       }
     }
+
     if (initialSelectedBlob) {
       setSelectedBlob(initialSelectedBlob);
       setTitle(initialSelectedBlob.title);
       setContent(initialSelectedBlob.content);
       setActiveView("workspace");
+    } else if (defaultView) {
+      setActiveView(defaultView);
     }
-  }, [initialSelectedBlob, setActiveView]);
+  }, [initialSelectedBlob, defaultView, setActiveView]);
 
   // --- Initial Theme Sync ---
   useEffect(() => {
