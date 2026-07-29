@@ -30,7 +30,6 @@ import {
   saveApiRequestHistoryAction,
   saveEnvironmentAction,
 } from "@/actions/apiStudio";
-import { StorageStatusPanel } from "@/components/editor/StorageStatusPanel";
 import {
   Send,
   Plus,
@@ -383,13 +382,58 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
     e.preventDefault();
     if (!newColNameInput.trim()) return;
 
-    const res = await createCollectionAction(newColNameInput, newColDescInput);
-    addApiCollection(newColNameInput, newColDescInput);
+    try {
+      const res = await createCollectionAction(newColNameInput, newColDescInput);
+      const targetColId = res.success && res.collection ? res.collection.id : undefined;
 
-    addActivity("api_send", `Created Collection: ${newColNameInput}`);
-    setNewColNameInput("");
-    setNewColDescInput("");
-    setShowCreateColModal(false);
+      addApiCollection(newColNameInput, newColDescInput, targetColId);
+
+      addActivity("api_send", `Created Collection: ${newColNameInput}`);
+      setNewColNameInput("");
+      setNewColDescInput("");
+      setShowCreateColModal(false);
+    } catch (err: any) {
+      console.error("Error creating collection:", err);
+      addApiCollection(newColNameInput, newColDescInput);
+      setNewColNameInput("");
+      setNewColDescInput("");
+      setShowCreateColModal(false);
+    }
+  };
+
+  const handleDeleteCollection = async (colId: string, colName: string) => {
+    if (confirm(`Delete collection "${colName}"?`)) {
+      deleteApiCollection(colId);
+      await deleteCollectionAction(colId);
+      addActivity("api_send", `Deleted Collection: ${colName}`);
+    }
+  };
+
+  const handleAddRequestToCollection = async (collectionId: string) => {
+    const reqId = crypto.randomUUID();
+    const defaultReq: ApiRequestItem = {
+      id: reqId,
+      name: "New Request",
+      method: "GET",
+      url: "https://api.github.com/users/google",
+      headers: [{ key: "Accept", value: "application/json", enabled: true }],
+      auth: { type: "none" },
+      bodyType: "none",
+      body: "{\n  \n}",
+      formData: [],
+    };
+
+    addRequestToCollection(collectionId, defaultReq);
+
+    await saveApiRequestAction({
+      id: reqId,
+      collectionId,
+      name: defaultReq.name || "New Request",
+      method: defaultReq.method,
+      endpoint: defaultReq.url,
+      body: defaultReq.body,
+      headers: defaultReq.headers,
+    });
   };
 
   // Import Action Handler
@@ -675,6 +719,7 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
       const colRes = await createCollectionAction(newSaveColName);
       if (colRes.success && colRes.collection) {
         colId = colRes.collection.id;
+        addApiCollection(newSaveColName, undefined, colId);
       } else {
         colId = addApiCollection(newSaveColName);
       }
@@ -932,7 +977,7 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                addRequestToCollection(col.id);
+                                handleAddRequestToCollection(col.id);
                               }}
                               className="p-1 hover:text-primary rounded cursor-pointer"
                               title="Add Request to Folder"
@@ -952,9 +997,7 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (confirm(`Delete collection "${col.name}"?`)) {
-                                  deleteApiCollection(col.id);
-                                }
+                                handleDeleteCollection(col.id, col.name);
                               }}
                               className="p-1 hover:text-red-500 rounded cursor-pointer"
                               title="Delete Collection"
@@ -971,7 +1014,7 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                               <div className="text-[11px] text-muted-foreground py-2 pl-2 italic flex items-center justify-between">
                                 <span>No requests in folder</span>
                                 <button
-                                  onClick={() => addRequestToCollection(col.id)}
+                                  onClick={() => handleAddRequestToCollection(col.id)}
                                   className="text-[10px] text-primary hover:underline font-semibold cursor-pointer"
                                 >
                                   + Add
@@ -1710,17 +1753,6 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Storage Status & Developer Debug Panel */}
-            <div className="p-2 border-t border-border bg-card/40">
-              <StorageStatusPanel
-                objectKey={`collections/default-workspace/default-collection/${activeApiRequest.id || "req"}/body.json`}
-                sizeBytes={response?.sizeBytes || 1280}
-                storageType="r2"
-                blobId={activeApiRequest.id}
-                isVerified={true}
-              />
             </div>
           </div>
         </main>

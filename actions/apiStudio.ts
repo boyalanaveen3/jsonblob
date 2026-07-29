@@ -204,8 +204,18 @@ export async function createCollectionAction(
   workspaceId: string = "default-workspace"
 ): Promise<{ success: boolean; collection?: Collection; error?: string }> {
   try {
-    const userId = await getUserId();
+    const rawUserId = await getUserId();
     const db = await getDb();
+    await ensureDefaultWorkspaceAndCollection(db);
+
+    let validUserId: string | null = null;
+    if (rawUserId) {
+      try {
+        const u = (await db.select().from(users).where(eq(users.id, rawUserId)).all())[0];
+        if (u) validUserId = rawUserId;
+      } catch {}
+    }
+
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
@@ -217,7 +227,7 @@ export async function createCollectionAction(
       color: color || "#3b82f6",
       icon: icon || "Folder",
       isFavorite: "false",
-      createdBy: userId,
+      createdBy: validUserId,
       createdAt: now,
       updatedAt: now,
       requestCount: "0",
@@ -228,6 +238,7 @@ export async function createCollectionAction(
     safeRevalidatePath("/api");
     return { success: true, collection: newCollection };
   } catch (error: any) {
+    console.error("Error in createCollectionAction:", error);
     return { success: false, error: error.message || "Failed to create collection" };
   }
 }

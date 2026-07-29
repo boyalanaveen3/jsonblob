@@ -129,7 +129,7 @@ interface WorkspaceState {
   updateActiveApiRequest: (updates: Partial<ApiRequestItem>) => void;
   addApiHistory: (item: Omit<ApiHistoryItem, "id" | "executedAt">) => void;
   clearApiHistory: () => void;
-  addApiCollection: (name: string, description?: string) => string;
+  addApiCollection: (name: string, description?: string, customId?: string) => string;
   renameApiCollection: (id: string, name: string) => void;
   deleteApiCollection: (id: string) => void;
   saveRequestToCollection: (collectionId: string, request: Omit<ApiRequestItem, "id"> & { title?: string; name?: string }) => void;
@@ -276,16 +276,27 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         set({ apiHistory: [newItem, ...apiHistory].slice(0, 50) }); // Limit to 50
       },
       clearApiHistory: () => set({ apiHistory: [] }),
-      addApiCollection: (name, description) => {
+      addApiCollection: (name, description, customId) => {
         const { apiCollections } = get();
-        const newColId = crypto.randomUUID();
-        const newCol: ApiCollection = {
-          id: newColId,
-          name: name.trim(),
-          description: description?.trim(),
-          requests: [],
-        };
-        set({ apiCollections: [newCol, ...apiCollections] });
+        const newColId = customId || crypto.randomUUID();
+        const existingIdx = apiCollections.findIndex((c) => c.id === newColId);
+        if (existingIdx >= 0) {
+          const updated = [...apiCollections];
+          updated[existingIdx] = {
+            ...updated[existingIdx],
+            name: name.trim(),
+            description: description?.trim() || updated[existingIdx].description,
+          };
+          set({ apiCollections: updated });
+        } else {
+          const newCol: ApiCollection = {
+            id: newColId,
+            name: name.trim(),
+            description: description?.trim(),
+            requests: [],
+          };
+          set({ apiCollections: [newCol, ...apiCollections] });
+        }
         return newColId;
       },
       renameApiCollection: (id, name) => {
@@ -319,7 +330,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       addRequestToCollection: (collectionId, request) => {
         const { apiCollections } = get();
         const newReq: ApiRequestItem = {
-          id: crypto.randomUUID(),
+          id: request?.id || crypto.randomUUID(),
           name: request?.name || "New Request",
           method: request?.method || "GET",
           url: request?.url || "https://api.github.com/users/google",
@@ -332,6 +343,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         set({
           apiCollections: apiCollections.map((c) => {
             if (c.id === collectionId) {
+              const reqExists = c.requests.some((r) => r.id === newReq.id);
+              if (reqExists) {
+                return {
+                  ...c,
+                  requests: c.requests.map((r) => (r.id === newReq.id ? { ...r, ...newReq } : r)),
+                };
+              }
               return { ...c, requests: [...c.requests, newReq] };
             }
             return c;
@@ -365,8 +383,22 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       },
       importApiCollections: (newCollections) => {
         const { apiCollections } = get();
-        // Merge or append imported collections
-        set({ apiCollections: [...newCollections, ...apiCollections] });
+        const map = new Map<string, ApiCollection>();
+        apiCollections.forEach((c) => map.set(c.id, c));
+        newCollections.forEach((c) => {
+          if (!map.has(c.id)) {
+            map.set(c.id, c);
+          } else {
+            const existing = map.get(c.id)!;
+            map.set(c.id, {
+              ...existing,
+              name: c.name || existing.name,
+              description: c.description || existing.description,
+              requests: c.requests.length > 0 ? c.requests : existing.requests,
+            });
+          }
+        });
+        set({ apiCollections: Array.from(map.values()) });
       },
       addEnvVariable: (variable) => {
         const { envVariables } = get();

@@ -45,7 +45,6 @@ import { ApiStudioView } from "@/components/editor/ApiStudioView";
 import { CollectionsView } from "@/components/editor/CollectionsView";
 import { SettingsView } from "@/components/editor/SettingsView";
 import { ConversionView } from "@/components/editor/ConversionView";
-import { StorageStatusPanel } from "@/components/editor/StorageStatusPanel";
 import dynamic from "next/dynamic";
 
 const MonacoEditor = dynamic(() => import("@/components/editor/MonacoEditor"), {
@@ -1303,18 +1302,6 @@ export default function BlobDashboard({
               error={validationError || undefined}
               activeFileName={title || "document.json"}
               onInsertCode={(code) => setContent(code)}
-            />
-          </div>
-
-          {/* Storage Status & Developer Debug Panel */}
-          <div className="px-4 py-1.5 border-t border-border bg-card/40">
-            <StorageStatusPanel
-              objectKey={selectedBlob?.storageKey || (selectedBlob?.id ? `blobs/default-user/${selectedBlob.id}.json` : "blobs/default-user/active.json")}
-              sizeBytes={new TextEncoder().encode(content).byteLength}
-              storageType={selectedBlob?.storageType || "r2"}
-              blobId={selectedBlob?.id}
-              lastSync={selectedBlob?.updatedAt ? new Date(selectedBlob.updatedAt).toLocaleTimeString() : undefined}
-              isVerified={true}
             />
           </div>
 

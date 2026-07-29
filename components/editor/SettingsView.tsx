@@ -12,8 +12,10 @@ import {
   Check, 
   Info,
   SlidersHorizontal,
-  LogOut
+  LogOut,
+  Database
 } from "lucide-react";
+import { StorageStatusPanel } from "@/components/editor/StorageStatusPanel";
 
 interface SettingsViewProps {
   userName: string | null;
@@ -167,6 +169,24 @@ export function SettingsView({
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* Storage & Hybrid Persistence Console */}
+          <div className="bg-card border border-border rounded-xl p-5 shadow-sm space-y-4">
+            <h3 className="font-bold text-sm flex items-center gap-2">
+              <Database className="w-4 h-4 text-primary" />
+              <span>Hybrid Storage & Persistence Status</span>
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Monitor real-time object verification badge (R2 bucket HEAD check) and metadata synchronization status (Cloudflare D1 database).
+            </p>
+            <StorageStatusPanel
+              objectKey="collections/default-workspace/default-collection/active.json"
+              sizeBytes={2048}
+              storageType="r2"
+              blobId="settings-monitor"
+              isVerified={true}
+            />
           </div>
 
           {/* Platform Info */}
