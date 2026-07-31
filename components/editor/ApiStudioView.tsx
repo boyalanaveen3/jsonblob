@@ -20,6 +20,7 @@ import {
   getCollectionsAction,
   getApiRequestsAction,
   createCollectionAction,
+  updateCollectionAction,
   deleteCollectionAction,
   createFolderAction,
   deleteFolderAction,
@@ -122,6 +123,13 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
   const [newColNameInput, setNewColNameInput] = useState("");
   const [newColDescInput, setNewColDescInput] = useState("");
 
+  const [showEditColModal, setShowEditColModal] = useState(false);
+  const [editingColId, setEditingColId] = useState<string | null>(null);
+  const [editColNameInput, setEditColNameInput] = useState("");
+  const [editColDescInput, setEditColDescInput] = useState("");
+
+  const [responseFormat, setResponseFormat] = useState<"auto" | "json" | "html" | "plaintext">("auto");
+
   const [showImportModal, setShowImportModal] = useState(false);
   const [importTab, setImportTab] = useState<"file" | "postman" | "openapi" | "curl">("postman");
   const [importRawText, setImportRawText] = useState("");
@@ -139,6 +147,25 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
   // Request renaming state
   const [editingReqId, setEditingReqId] = useState<string | null>(null);
   const [editingReqNameVal, setEditingReqNameVal] = useState("");
+
+  const handleStartEditCollection = (col: ApiCollection) => {
+    setEditingColId(col.id);
+    setEditColNameInput(col.name);
+    setEditColDescInput(col.description || "");
+    setShowEditColModal(true);
+  };
+
+  const handleSaveEditCollectionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingColId || !editColNameInput.trim()) return;
+
+    renameApiCollection(editingColId, editColNameInput, editColDescInput);
+    await updateCollectionAction(editingColId, editColNameInput, editColDescInput);
+    addActivity("api_send", `Updated Collection: ${editColNameInput}`);
+
+    setShowEditColModal(false);
+    setEditingColId(null);
+  };
 
   const handleRenameRequest = async (colId: string, req: ApiRequestItem, newName: string) => {
     const trimmed = newName.trim();
@@ -597,6 +624,37 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
         rawText = JSON.stringify(proxyData, null, 2);
       }
 
+      // If target URL is localhost or 127.0.0.1 and Edge proxy returned an error (e.g. Cloudflare 1003 direct IP restriction), try direct browser fetch
+      if ((finalUrl.includes("localhost") || finalUrl.includes("127.0.0.1")) && (resStatus >= 400 || rawText.includes("1003"))) {
+        try {
+          const directRes = await fetch(finalUrl, {
+            method,
+            headers: headersInit,
+            body: bodyInit,
+          });
+          resStatus = directRes.status;
+          rawText = await directRes.text();
+          resHeaders = {};
+          directRes.headers.forEach((v, k) => {
+            resHeaders[k] = v;
+          });
+        } catch (directErr: any) {
+          // If direct fetch also fails (e.g. server offline ECONNREFUSED or CORS), construct structured error JSON like Postman
+          resStatus = 503;
+          rawText = JSON.stringify(
+            {
+              status: 1061,
+              error: "UNAVAILABLE",
+              message: `No connection established to ${finalUrl}. Error: connect ECONNREFUSED 127.0.0.1`,
+              details: directErr.message || "Failed to execute request against local backend service."
+            },
+            null,
+            2
+          );
+          resHeaders = { "content-type": "application/json" };
+        }
+      }
+
       const sizeBytes = new Blob([rawText]).size;
 
       // Automatically pretty-print JSON response if valid JSON string
@@ -983,6 +1041,16 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                               title="Add Request to Folder"
                             >
                               <Plus className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartEditCollection(col);
+                              }}
+                              className="p-1 hover:text-amber-500 rounded cursor-pointer"
+                              title="Edit Collection Name & Description"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={(e) => {
@@ -1653,7 +1721,7 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                           : "bg-amber-500/15 text-amber-500"
                       }`}
                     >
-                      Status: {response.status === 0 ? "CORS Blocked" : response.status}
+                      Status: {response.status === 0 ? "0 CORS Blocked" : response.status === 200 ? "200 OK" : response.status === 403 ? "403 Forbidden" : response.status === 404 ? "404 Not Found" : response.status === 500 ? "500 Internal Server Error" : response.status === 502 ? "502 Bad Gateway" : response.status === 503 ? "503 Service Unavailable" : response.status}
                     </span>
 
                     <span className="text-xs text-muted-foreground font-mono">
@@ -1697,6 +1765,19 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                     </button>
                   </div>
 
+                  {activeResTab === "pretty" && (
+                    <select
+                      value={responseFormat}
+                      onChange={(e) => setResponseFormat(e.target.value as any)}
+                      className="text-[11px] font-semibold bg-accent/40 border border-border rounded px-1.5 py-0.5 cursor-pointer focus:outline-none"
+                    >
+                      <option value="auto">Auto (Format)</option>
+                      <option value="json">JSON</option>
+                      <option value="html">HTML</option>
+                      <option value="plaintext">Text</option>
+                    </select>
+                  )}
+
                   {/* Direct Action: Save Response as JSON Blob */}
                   <button
                     onClick={handleSaveResponseAsBlob}
@@ -1722,7 +1803,17 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                   <MonacoEditor
                     value={response.body}
                     onChange={() => {}}
-                    language="json"
+                    language={
+                      responseFormat === "json"
+                        ? "json"
+                        : responseFormat === "html"
+                        ? "html"
+                        : responseFormat === "plaintext"
+                        ? "plaintext"
+                        : response.body.trim().startsWith("<")
+                        ? "html"
+                        : "json"
+                    }
                     isDark={isDark}
                     readOnly
                   />
@@ -1812,6 +1903,67 @@ export function ApiStudioView({ isDark, onSaveAsBlob }: ApiStudioViewProps) {
                   className="px-4 py-2 bg-primary text-primary-foreground rounded text-xs font-bold hover:opacity-95 cursor-pointer shadow-sm"
                 >
                   Create Collection Folder
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL 1B: EDIT COLLECTION MODAL ================= */}
+      {showEditColModal && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <Edit3 className="w-4 h-4 text-amber-500" />
+                <span>Edit Collection</span>
+              </div>
+              <button
+                onClick={() => setShowEditColModal(false)}
+                className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditCollectionSubmit} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-foreground">Collection Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Analytics Services"
+                  value={editColNameInput}
+                  onChange={(e) => setEditColNameInput(e.target.value)}
+                  className="w-full text-xs bg-background border border-border rounded p-2.5 outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-foreground">Description (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="Collection description"
+                  value={editColDescInput}
+                  onChange={(e) => setEditColDescInput(e.target.value)}
+                  className="w-full text-xs bg-background border border-border rounded p-2.5 outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEditColModal(false)}
+                  className="px-4 py-2 border border-border rounded text-xs font-semibold hover:bg-accent cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded text-xs font-bold hover:opacity-95 cursor-pointer shadow-sm"
+                >
+                  Save Changes
                 </button>
               </div>
             </form>

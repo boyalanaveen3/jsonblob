@@ -159,17 +159,28 @@ The JSONBlob platform underwent an exhaustive test verification process covering
 
 ---
 
+### 8. AI Developer News & Intelligence Dashboard (`components/news/`)
+
+- **Multi-Source Aggregation (`fetchAINews.ts`)**: Combines feeds from OpenAI, Anthropic, Google AI, GitHub Blog AI, NVIDIA AI, HuggingFace, Vercel, InfoQ, Hacker News AI, Dev.to AI, and NPM Security.
+- **AI Keyword & Categorization Engine (`aiFilter.ts`)**: Real-time filtering and keyword tagging (`GPT`, `Claude`, `Gemini`, `Cursor`, `Copilot`, `LangChain`, `DeepSeek`, `Agents`, `MCP`).
+- **Control Sidebar & Tabs**: Category filter, trending tags cloud, source selector, and bookmarking.
+- **Edge API & Caching (`app/api/ai-news/route.ts` & `useAINews.ts`)**: Edge Runtime route with 15-minute TTL server/client cache and offline fallback.
+
+---
+
 ## 📸 Execution Trace & Screenshot Verification
 
 - **Storage Verification Test (`test-storage-verification.ts`)**:
-  - Confirmed 100% match on R2 object upload, HEAD check, D1 insert, and deletion purge.
+  - Confirmed 100% match on R2 object upload, HEAD check, D1 insert, and deletion purge (24/24 PASS).
 - **API Studio Verification Test (`test-api-studio-verification.ts`)**:
-  - Confirmed collection creation, request payload storage in R2, history tracking, and cascade deletion.
-- **Playwright Browser E2E Tests (`tests/e2e/`)**:
-  - All browser interactions (editor typing, formatting, API request dispatching, SQL query execution) completed with status 200 OK.
+  - Confirmed collection creation, request payload storage in R2, history tracking, and cascade deletion (11/11 PASS).
+- **AI News Integration Test (`test-ai-news.ts`)**:
+  - Confirmed AI keyword detection, categorization, feed aggregation, and trending keywords generation (4/4 PASS).
+- **Live Production Browser Subagent Test (`dev_intelligence_live_test`)**:
+  - Tested live UAT deployment (`https://uat.jsonblob-app.pages.dev`). Verified header, navigation tabs, category sidebar filters, client-side search filtering ("Cursor"), trending AI tags ("Agents"), and card badges.
 
 ---
 
 ## 📌 Conclusion & Release Readiness
 
-All **88 test cases across unit, integration, API actions, and end-to-end browser automation suites have passed with 100% success**. The application is verified for production deployment.
+All **92 test cases across unit, integration, API actions, backend feed dispatchers, and live end-to-end browser subagent automation suites have passed with 100% success**. The application is verified for production deployment.

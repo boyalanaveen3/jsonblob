@@ -38,7 +38,7 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
 
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -75,13 +75,12 @@ export default function AuthPage() {
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("theme");
-    if (savedTheme === "light") {
+    if (savedTheme === "dark") {
+      document.documentElement.classList.add("dark");
+      setIsDark(true);
+    } else {
       document.documentElement.classList.remove("dark");
       setIsDark(false);
-    } else {
-      document.documentElement.classList.add("dark");
-      localStorage.theme = "dark";
-      setIsDark(true);
     }
   }, []);
 
@@ -772,7 +771,7 @@ export default function AuthPage() {
                             placeholder="name@example.com"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2.5 bg-background/50 dark:bg-[#0c1017]/50 border border-border rounded-xl text-sm outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 focus:shadow-[0_0_15px_rgba(59,130,246,0.15)] placeholder:text-muted-foreground/60 placeholder:transition-opacity focus:placeholder:opacity-40"
+                            className="w-full pl-9 pr-4 py-2.5 bg-background dark:bg-[#0c1017] text-foreground dark:text-white border border-border dark:border-white/10 rounded-xl text-sm font-medium outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 focus:shadow-[0_0_15px_rgba(59,130,246,0.15)] placeholder:text-muted-foreground/60 placeholder:transition-opacity focus:placeholder:opacity-40 shadow-xs"
                           />
                         </div>
                       </div>
@@ -798,7 +797,7 @@ export default function AuthPage() {
                             placeholder="••••••••"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2.5 bg-background/50 dark:bg-[#0c1017]/50 border border-border rounded-xl text-sm outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 focus:shadow-[0_0_15px_rgba(59,130,246,0.15)] placeholder:text-muted-foreground/60 placeholder:transition-opacity focus:placeholder:opacity-40"
+                            className="w-full pl-9 pr-4 py-2.5 bg-background dark:bg-[#0c1017] text-foreground dark:text-white border border-border dark:border-white/10 rounded-xl text-sm font-medium outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 focus:shadow-[0_0_15px_rgba(59,130,246,0.15)] placeholder:text-muted-foreground/60 placeholder:transition-opacity focus:placeholder:opacity-40 shadow-xs"
                           />
                         </div>
                       </div>
@@ -828,7 +827,7 @@ export default function AuthPage() {
                             placeholder="John Doe"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2.5 bg-background/50 dark:bg-[#0c1017]/50 border border-border rounded-xl text-sm outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 focus:shadow-[0_0_15px_rgba(59,130,246,0.15)] placeholder:text-muted-foreground/60 placeholder:transition-opacity focus:placeholder:opacity-40"
+                            className="w-full pl-9 pr-4 py-2.5 bg-background dark:bg-[#0c1017] text-foreground dark:text-white border border-border dark:border-white/10 rounded-xl text-sm font-medium outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 focus:shadow-[0_0_15px_rgba(59,130,246,0.15)] placeholder:text-muted-foreground/60 placeholder:transition-opacity focus:placeholder:opacity-40 shadow-xs"
                           />
                         </div>
                       </div>
@@ -843,7 +842,7 @@ export default function AuthPage() {
                             placeholder="name@example.com"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2.5 bg-background/50 dark:bg-[#0c1017]/50 border border-border rounded-xl text-sm outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 focus:shadow-[0_0_15px_rgba(59,130,246,0.15)] placeholder:text-muted-foreground/60 placeholder:transition-opacity focus:placeholder:opacity-40"
+                            className="w-full pl-9 pr-4 py-2.5 bg-background dark:bg-[#0c1017] text-foreground dark:text-white border border-border dark:border-white/10 rounded-xl text-sm font-medium outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 focus:shadow-[0_0_15px_rgba(59,130,246,0.15)] placeholder:text-muted-foreground/60 placeholder:transition-opacity focus:placeholder:opacity-40 shadow-xs"
                           />
                         </div>
                       </div>
@@ -858,7 +857,7 @@ export default function AuthPage() {
                             placeholder="••••••••"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2.5 bg-background/50 dark:bg-[#0c1017]/50 border border-border rounded-xl text-sm outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 focus:shadow-[0_0_15px_rgba(59,130,246,0.15)] placeholder:text-muted-foreground/60 placeholder:transition-opacity focus:placeholder:opacity-40"
+                            className="w-full pl-9 pr-4 py-2.5 bg-background dark:bg-[#0c1017] text-foreground dark:text-white border border-border dark:border-white/10 rounded-xl text-sm font-medium outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 focus:shadow-[0_0_15px_rgba(59,130,246,0.15)] placeholder:text-muted-foreground/60 placeholder:transition-opacity focus:placeholder:opacity-40 shadow-xs"
                           />
                         </div>
                       </div>

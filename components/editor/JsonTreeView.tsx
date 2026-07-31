@@ -1,13 +1,26 @@
 "use client";
 
 import React, { useState } from "react";
-import { ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Check, Sparkles, AlertCircle } from "lucide-react";
 
 interface JsonTreeViewProps {
   data: any;
 }
 
 export function JsonTreeView({ data }: JsonTreeViewProps) {
+  // 1. Handle Empty or Blank Editor Data
+  if (data === null || data === undefined || (typeof data === "string" && !data.trim())) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full min-h-[220px] p-6 text-center select-none bg-card border border-border rounded-md text-muted-foreground space-y-2">
+        <Sparkles className="w-8 h-8 text-primary/40 animate-pulse" />
+        <span className="font-semibold text-xs text-foreground">Interactive Tree View</span>
+        <span className="text-[11px] text-muted-foreground max-w-xs">
+          Start typing or paste JSON into the source editor to inspect interactive tree nodes.
+        </span>
+      </div>
+    );
+  }
+
   let parsed: any;
   let parseError: string | null = null;
 
@@ -16,16 +29,28 @@ export function JsonTreeView({ data }: JsonTreeViewProps) {
       parsed = JSON.parse(data);
     } catch (e: any) {
       parsed = null;
-      parseError = e.message || "Invalid JSON";
+      parseError = e.message || "Invalid JSON syntax";
     }
   } else {
     parsed = data;
   }
 
+  // 2. Handle Syntax Parse Errors gracefully
   if (parseError) {
     return (
-      <div className="p-4 text-xs font-mono text-red-500 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30 rounded-md">
-        Tree view unavailable: {parseError}
+      <div className="flex flex-col items-center justify-center h-full min-h-[220px] p-6 text-center select-none bg-card border border-border rounded-md text-muted-foreground space-y-3">
+        <div className="w-9 h-9 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
+          <AlertCircle className="w-5 h-5" />
+        </div>
+        <div className="space-y-1">
+          <span className="font-bold text-xs text-foreground block">Waiting for Valid JSON</span>
+          <div className="text-[11px] text-amber-400 font-mono bg-amber-500/10 px-2.5 py-1 rounded border border-amber-500/20 max-w-sm truncate">
+            {parseError}
+          </div>
+        </div>
+        <span className="text-[11px] text-muted-foreground max-w-xs">
+          Complete the JSON structure in the source editor to generate the interactive tree view.
+        </span>
       </div>
     );
   }
@@ -59,9 +84,13 @@ function TreeNode({ name, value, isLast, depth }: TreeNodeProps) {
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(JSON.stringify(value, null, 2));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    try {
+      navigator.clipboard.writeText(JSON.stringify(value, null, 2));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Ignore clipboard error
+    }
   };
 
   const type = typeof value;
@@ -111,7 +140,7 @@ function TreeNode({ name, value, isLast, depth }: TreeNodeProps) {
           {/* Inline controls */}
           <button
             onClick={handleCopy}
-            className="opacity-0 group-hover:opacity-100 ml-auto p-1 text-muted-foreground hover:text-foreground rounded transition-opacity"
+            className="opacity-0 group-hover:opacity-100 ml-auto p-1 text-muted-foreground hover:text-foreground rounded transition-opacity cursor-pointer"
             title="Copy branch JSON"
           >
             {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type ViewType = "dashboard" | "workspace" | "sql" | "api" | "collections" | "settings" | "conversion";
+export type ViewType = "dashboard" | "workspace" | "sql" | "api" | "collections" | "settings" | "conversion" | "news";
 
 export interface SqlTab {
   id: string;
@@ -130,7 +130,7 @@ interface WorkspaceState {
   addApiHistory: (item: Omit<ApiHistoryItem, "id" | "executedAt">) => void;
   clearApiHistory: () => void;
   addApiCollection: (name: string, description?: string, customId?: string) => string;
-  renameApiCollection: (id: string, name: string) => void;
+  renameApiCollection: (id: string, name: string, description?: string) => void;
   deleteApiCollection: (id: string) => void;
   saveRequestToCollection: (collectionId: string, request: Omit<ApiRequestItem, "id"> & { title?: string; name?: string }) => void;
   addRequestToCollection: (collectionId: string, request?: Partial<ApiRequestItem>) => void;
@@ -143,6 +143,7 @@ interface WorkspaceState {
   
   // Collections
   createCollection: (name: string, description?: string) => void;
+  updateCollection: (id: string, name: string, description?: string) => void;
   deleteCollection: (id: string) => void;
   toggleBlobInCollection: (collectionId: string, blobId: string) => void;
   
@@ -299,11 +300,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         }
         return newColId;
       },
-      renameApiCollection: (id, name) => {
+      renameApiCollection: (id, name, description) => {
         const { apiCollections } = get();
         set({
           apiCollections: apiCollections.map((c) =>
-            c.id === id ? { ...c, name: name.trim() } : c
+            c.id === id ? { ...c, name: name.trim(), description: description !== undefined ? description.trim() : c.description } : c
           ),
         });
       },
@@ -429,6 +430,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           blobIds: [],
         };
         set({ collections: [newCol, ...collections] });
+      },
+      updateCollection: (id, name, description) => {
+        const { collections } = get();
+        set({
+          collections: collections.map((c) =>
+            c.id === id ? { ...c, name: name.trim(), description: description?.trim() } : c
+          ),
+        });
       },
       deleteCollection: (id) => {
         const { collections } = get();

@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useWorkspaceStore } from "@/lib/store/workspaceStore";
-import { Folder, FolderPlus, Trash2, FileJson, Layers, Plus, ChevronRight, Layout } from "lucide-react";
+import { Folder, FolderPlus, Trash2, FileJson, Layers, Plus, ChevronRight, Layout, Edit3, Check, X } from "lucide-react";
 
 interface CollectionsViewProps {
   blobs: any[];
@@ -13,6 +13,7 @@ export function CollectionsView({ blobs, onSelectBlob }: CollectionsViewProps) {
   const { 
     collections, 
     createCollection, 
+    updateCollection,
     deleteCollection, 
     toggleBlobInCollection,
     setActiveView 
@@ -22,6 +23,11 @@ export function CollectionsView({ blobs, onSelectBlob }: CollectionsViewProps) {
   const [newColDesc, setNewColDesc] = useState("");
   const [activeColId, setActiveColId] = useState<string | null>(null);
 
+  // Edit Collection state
+  const [editingColId, setEditingColId] = useState<string | null>(null);
+  const [editColName, setEditColName] = useState("");
+  const [editColDesc, setEditColDesc] = useState("");
+
   const activeCollection = collections.find((c) => c.id === activeColId) || null;
 
   const handleCreateCollection = (e: React.FormEvent) => {
@@ -30,6 +36,18 @@ export function CollectionsView({ blobs, onSelectBlob }: CollectionsViewProps) {
     createCollection(newColName, newColDesc);
     setNewColName("");
     setNewColDesc("");
+  };
+
+  const handleStartEdit = (col: any) => {
+    setEditingColId(col.id);
+    setEditColName(col.name);
+    setEditColDesc(col.description || "");
+  };
+
+  const handleSaveEdit = (id: string) => {
+    if (!editColName.trim()) return;
+    updateCollection(id, editColName, editColDesc);
+    setEditingColId(null);
   };
 
   const getBlobById = (id: string) => {
@@ -91,24 +109,37 @@ export function CollectionsView({ blobs, onSelectBlob }: CollectionsViewProps) {
                     : "border-border/50 hover:bg-accent/40"
                 }`}
               >
-                <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   <Folder className={`w-4 h-4 shrink-0 ${activeColId === col.id ? "text-primary fill-primary/10" : "text-muted-foreground"}`} />
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <span className="text-xs font-semibold block truncate text-foreground">{col.name}</span>
                     <span className="text-[10px] text-muted-foreground">{col.blobIds.length} items</span>
                   </div>
                 </div>
 
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (activeColId === col.id) setActiveColId(null);
-                    deleteCollection(col.id);
-                  }}
-                  className="p-1 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleStartEdit(col);
+                    }}
+                    className="p-1 hover:text-primary rounded cursor-pointer"
+                    title="Edit Collection Name / Description"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-muted-foreground hover:text-primary" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (activeColId === col.id) setActiveColId(null);
+                      deleteCollection(col.id);
+                    }}
+                    className="p-1 hover:text-red-500 rounded cursor-pointer"
+                    title="Delete Collection"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-red-500" />
+                  </button>
+                </div>
               </div>
             ))
           )}
@@ -120,15 +151,62 @@ export function CollectionsView({ blobs, onSelectBlob }: CollectionsViewProps) {
         {activeCollection ? (
           <div className="flex-1 flex flex-col overflow-hidden p-6 space-y-6">
             {/* Header info */}
-            <div className="border-b border-border pb-4 shrink-0">
-              <div className="flex items-center gap-2">
-                <Folder className="w-6 h-6 text-primary fill-primary/10" />
-                <h2 className="text-lg font-bold">{activeCollection.name}</h2>
-              </div>
-              {activeCollection.description && (
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  {activeCollection.description}
-                </p>
+            <div className="border-b border-border pb-4 shrink-0 flex items-start justify-between">
+              {editingColId === activeCollection.id ? (
+                <div className="flex-1 space-y-2 max-w-md">
+                  <div className="flex items-center gap-2">
+                    <Folder className="w-5 h-5 text-primary fill-primary/10 shrink-0" />
+                    <input
+                      type="text"
+                      value={editColName}
+                      onChange={(e) => setEditColName(e.target.value)}
+                      className="w-full text-base font-bold bg-background border border-primary rounded px-2 py-1 outline-none"
+                      placeholder="Collection Name"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={editColDesc}
+                    onChange={(e) => setEditColDesc(e.target.value)}
+                    className="w-full text-xs bg-background border border-border rounded px-2 py-1 outline-none"
+                    placeholder="Description (Optional)"
+                  />
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => handleSaveEdit(activeCollection.id)}
+                      className="px-3 py-1 bg-primary text-primary-foreground text-xs font-bold rounded flex items-center gap-1 cursor-pointer"
+                    >
+                      <Check className="w-3 h-3" /> Save
+                    </button>
+                    <button
+                      onClick={() => setEditingColId(null)}
+                      className="px-3 py-1 border border-border text-xs font-semibold rounded flex items-center gap-1 cursor-pointer"
+                    >
+                      <X className="w-3 h-3" /> Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Folder className="w-6 h-6 text-primary fill-primary/10" />
+                      <h2 className="text-lg font-bold">{activeCollection.name}</h2>
+                    </div>
+                    {activeCollection.description && (
+                      <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                        {activeCollection.description}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleStartEdit(activeCollection)}
+                    className="px-3 py-1.5 border border-border hover:bg-accent rounded text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-primary" />
+                    <span>Edit Collection</span>
+                  </button>
+                </>
               )}
             </div>
 

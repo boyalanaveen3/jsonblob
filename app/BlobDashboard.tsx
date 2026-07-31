@@ -31,6 +31,7 @@ import {
   User,
   ArrowLeftRight,
   LogOut,
+  Newspaper,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -45,6 +46,7 @@ import { ApiStudioView } from "@/components/editor/ApiStudioView";
 import { CollectionsView } from "@/components/editor/CollectionsView";
 import { SettingsView } from "@/components/editor/SettingsView";
 import { ConversionView } from "@/components/editor/ConversionView";
+import { DeveloperIntelligenceView } from "@/components/news/DeveloperIntelligenceView";
 import dynamic from "next/dynamic";
 
 const MonacoEditor = dynamic(() => import("@/components/editor/MonacoEditor"), {
@@ -198,13 +200,12 @@ export default function BlobDashboard({
   // --- Initial Theme Sync ---
   useEffect(() => {
     const savedTheme = localStorage.getItem("theme");
-    if (savedTheme === "light") {
+    if (savedTheme === "dark") {
+      document.documentElement.classList.add("dark");
+      setIsDark(true);
+    } else {
       document.documentElement.classList.remove("dark");
       setIsDark(false);
-    } else {
-      document.documentElement.classList.add("dark");
-      localStorage.theme = "dark";
-      setIsDark(true);
     }
   }, []);
 
@@ -828,6 +829,22 @@ export default function BlobDashboard({
                 </span>
               </button>
 
+              {/* Developer Intelligence Link */}
+              <button
+                onClick={() => setActiveView("news")}
+                title="Developer Intelligence"
+                className={`w-full py-3 flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer relative border-l-2 ${
+                  activeView === "news"
+                    ? "bg-primary/10 text-primary border-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+                }`}
+              >
+                <Newspaper className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                  Dev Intelligence
+                </span>
+              </button>
+
               {/* Settings Link */}
               <button
                 onClick={() => setActiveView("settings")}
@@ -1433,6 +1450,10 @@ export default function BlobDashboard({
             content=""
             onInsertCode={() => {}}
           />
+        </div>
+      ) : activeView === "news" ? (
+        <div className="flex-1 flex overflow-hidden">
+          <DeveloperIntelligenceView />
         </div>
       ) : (
         <div className="flex-1 flex overflow-hidden">
