@@ -101,6 +101,13 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showManageModal, setShowManageModal] = useState(false);
 
+  // API Token modal state
+  const [showTokenModal, setShowTokenModal] = useState(false);
+  const [apiTokenInput, setApiTokenInput] = useState("");
+  const [accountIdInput, setAccountIdInput] = useState("");
+  const [tokenConnecting, setTokenConnecting] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+
   // Schema Explorer Collapse States
   const [showStats, setShowStats] = useState(true);
   const [showTablesSection, setShowTablesSection] = useState(true);
@@ -487,8 +494,62 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
   };
 
   const handleConnectCloudflareClick = () => {
-    // Always redirect to real Cloudflare OAuth — never use the fake POST session
+    // Redirect to real Cloudflare OAuth
     window.location.href = "/api/auth/cloudflare?redirect=" + encodeURIComponent("/?view=sql&provider=cloudflare-d1");
+  };
+
+  const handleApiTokenConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!apiTokenInput.trim()) return;
+    setTokenConnecting(true);
+    setTokenError(null);
+    try {
+      const res = await fetch("/api/auth/cloudflare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apiToken: apiTokenInput.trim(),
+          accountId: accountIdInput.trim() || undefined,
+        }),
+      });
+      const data: any = await res.json();
+      if (!res.ok || !data.success) {
+        setTokenError(data.error || "Failed to connect. Check your token and account ID.");
+        setTokenConnecting(false);
+        return;
+      }
+      // Reload session to get real accounts/databases
+      setShowTokenModal(false);
+      setApiTokenInput("");
+      setAccountIdInput("");
+      await refreshProviderData();
+      // Trigger session re-fetch like OAuth callback does
+      const sessionRes = await fetch("/api/auth/cloudflare/session");
+      if (sessionRes.ok) {
+        const sessionData: any = await sessionRes.json();
+        if (sessionData.isConnected && Array.isArray(sessionData.accounts)) {
+          setCfAccounts(sessionData.accounts);
+          localStorage.setItem("cf_all_accounts", JSON.stringify(sessionData.accounts));
+          const acc = sessionData.accounts[0];
+          if (acc) {
+            setSelectedAccountId(acc.id);
+            localStorage.setItem("cf_active_acc_id", acc.id);
+            localStorage.setItem("cloudflare_d1_session", JSON.stringify({
+              isConnected: true,
+              accountName: acc.name,
+              email: acc.email || null,
+              organization: acc.organization || "Cloudflare",
+              connectedAt: new Date().toISOString(),
+            }));
+          }
+        }
+      }
+      await refreshProviderData();
+    } catch (err: any) {
+      setTokenError(err.message || "Network error. Please try again.");
+    } finally {
+      setTokenConnecting(false);
+    }
   };
 
   const handleDisconnectCloudflare = async () => {
@@ -758,12 +819,22 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
               </div>
             </div>
 
+            {/* Primary: API Token (works always) */}
             <button
-              onClick={handleConnectCloudflareClick}
+              onClick={() => { setShowTokenModal(true); setTokenError(null); }}
               className="w-full py-2.5 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs shadow-md shadow-violet-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              <Cloud className="w-4 h-4" />
-              <span>Continue with Cloudflare</span>
+              <ShieldCheck className="w-4 h-4" />
+              <span>Connect with API Token</span>
+            </button>
+
+            {/* Secondary: OAuth (requires public app) */}
+            <button
+              onClick={handleConnectCloudflareClick}
+              className="w-full py-2 px-4 rounded-lg border border-border hover:bg-accent text-muted-foreground hover:text-foreground font-semibold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Cloud className="w-3.5 h-3.5" />
+              <span>Continue with Cloudflare OAuth</span>
             </button>
           </div>
         ) : (
@@ -1801,6 +1872,87 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
               </button>
               <button type="submit" className="px-4 py-1.5 text-xs font-bold rounded bg-primary text-primary-foreground shadow">
                 Save Template
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* API Token Connect Modal */}
+      {showTokenModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <form onSubmit={handleApiTokenConnect} className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-violet-400" />
+                <h3 className="font-bold text-sm">Connect with Cloudflare API Token</h3>
+              </div>
+              <button type="button" onClick={() => setShowTokenModal(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">API Token <span className="text-red-400">*</span></label>
+              <input
+                type="password"
+                required
+                value={apiTokenInput}
+                onChange={(e) => setApiTokenInput(e.target.value)}
+                placeholder="Paste your Cloudflare API Token"
+                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs outline-none focus:border-violet-500 font-mono"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Generate at{" "}
+                <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer" className="text-violet-400 underline">
+                  dash.cloudflare.com/profile/api-tokens
+                </a>{" "}
+                — use the <strong>"Edit Cloudflare Workers"</strong> template or a custom token with D1 read/write access.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">Account ID <span className="text-muted-foreground font-normal">(optional)</span></label>
+              <input
+                type="text"
+                value={accountIdInput}
+                onChange={(e) => setAccountIdInput(e.target.value)}
+                placeholder="e.g. a16eafc27dc801faf18eefe371127022"
+                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs outline-none focus:border-violet-500 font-mono"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Find it on your{" "}
+                <a href="https://dash.cloudflare.com" target="_blank" rel="noreferrer" className="text-violet-400 underline">
+                  Cloudflare Dashboard
+                </a>{" "}
+                → right sidebar.
+              </p>
+            </div>
+
+            {tokenError && (
+              <div className="text-[11px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                {tokenError}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => { setShowTokenModal(false); setTokenError(null); }}
+                className="px-3 py-1.5 text-xs font-semibold rounded hover:bg-accent border border-border cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={tokenConnecting || !apiTokenInput.trim()}
+                className="px-4 py-1.5 text-xs font-bold rounded bg-violet-600 hover:bg-violet-700 text-white shadow disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+              >
+                {tokenConnecting ? (
+                  <><RefreshCw className="w-3 h-3 animate-spin" /> Connecting...</>
+                ) : (
+                  <><ShieldCheck className="w-3 h-3" /> Connect</>  
+                )}
               </button>
             </div>
           </form>
