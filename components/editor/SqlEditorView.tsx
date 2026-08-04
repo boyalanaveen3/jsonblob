@@ -486,21 +486,9 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
     }
   };
 
-  const handleConnectCloudflareClick = async () => {
-    try {
-      await fetch("/api/auth/cloudflare", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          databaseName: "Cloudflare D1",
-        }),
-      });
-      setConnectionStatus({ isConnected: true, accountName: "Connected Cloudflare Account" });
-      await refreshProviderData();
-    } catch (e) {
-      setConnectionStatus({ isConnected: true, accountName: "Connected Cloudflare Account" });
-      await refreshProviderData();
-    }
+  const handleConnectCloudflareClick = () => {
+    // Always redirect to real Cloudflare OAuth — never use the fake POST session
+    window.location.href = "/api/auth/cloudflare?redirect=" + encodeURIComponent("/?view=sql&provider=cloudflare-d1");
   };
 
   const handleDisconnectCloudflare = async () => {
