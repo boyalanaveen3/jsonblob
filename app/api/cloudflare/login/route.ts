@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   const isCustomClient = clientId && clientId.trim().length > 0 && clientId !== "54d1154d-3b4e-4860-93cb-66b9d62f6b86";
 
   if (isCustomClient) {
-    const authUrl = `https://dash.cloudflare.com/oauth2/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=account%3Aread%20d1%3Aread%20d1%3Awrite&state=${state}`;
+    const authUrl = `https://dash.cloudflare.com/oauth2/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
     return NextResponse.redirect(authUrl);
   }
 

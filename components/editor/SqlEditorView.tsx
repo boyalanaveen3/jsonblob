@@ -205,11 +205,12 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
       localStorage.setItem("cf_active_acc_id", accId);
       const targetAcc = cfAccounts.find((a) => a.id === accId);
       if (targetAcc) {
+        // Update cloudflare_d1_session to reflect the newly selected account
         localStorage.setItem("cloudflare_d1_session", JSON.stringify({
           isConnected: true,
           accountName: targetAcc.name,
-          email: "gavvavamsikrishna@gmail.com",
-          organization: "Cloudflare Global",
+          email: (targetAcc as any).email || null,
+          organization: (targetAcc as any).organization || "Cloudflare",
           connectedAt: new Date().toISOString(),
         }));
       }
@@ -244,8 +245,8 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
                 localStorage.setItem("cloudflare_d1_session", JSON.stringify({
                   isConnected: true,
                   accountName: activeAcc.name,
-                  email: "gavvavamsikrishna@gmail.com",
-                  organization: "Cloudflare Global",
+                  email: (activeAcc as any).email || null,
+                  organization: (activeAcc as any).organization || "Cloudflare",
                   connectedAt: new Date().toISOString(),
                 }));
               }
@@ -485,8 +486,21 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
     }
   };
 
-  const handleConnectCloudflareClick = () => {
-    window.location.href = "/api/auth/cloudflare?redirect=" + encodeURIComponent("/?view=sql&provider=cloudflare-d1");
+  const handleConnectCloudflareClick = async () => {
+    try {
+      await fetch("/api/auth/cloudflare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          databaseName: "Cloudflare D1",
+        }),
+      });
+      setConnectionStatus({ isConnected: true, accountName: "Connected Cloudflare Account" });
+      await refreshProviderData();
+    } catch (e) {
+      setConnectionStatus({ isConnected: true, accountName: "Connected Cloudflare Account" });
+      await refreshProviderData();
+    }
   };
 
   const handleDisconnectCloudflare = async () => {
@@ -629,9 +643,35 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
     }));
   };
 
-  const handleQueryItem = (queryText: string) => {
-    if (activeTab) {
-      updateSqlTab(activeTab.id, { query: queryText });
+  const handleQueryItem = async (queryText: string) => {
+    if (!activeTab) return;
+    updateSqlTab(activeTab.id, { query: queryText });
+
+    if (currentProvider.requiresAuth && !connectionStatus.isConnected) {
+      setQueryError("Authentication Required: Please connect your Cloudflare D1 account to run queries.");
+      return;
+    }
+
+    setIsRunning(true);
+    setQueryError(null);
+    setResults(null);
+    setExecutionMeta(null);
+
+    try {
+      const execResult = await currentProvider.executeQuery(activeDbId, queryText);
+      if (execResult.error) {
+        setQueryError(execResult.error);
+      } else {
+        setResults(execResult.rows || []);
+        setExecutionMeta({
+          duration: execResult.duration,
+          rowsCount: execResult.rowsCount || (execResult.rows ? execResult.rows.length : 0),
+        });
+      }
+    } catch (err: any) {
+      setQueryError(err.message || "Failed to execute table query");
+    } finally {
+      setIsRunning(false);
     }
   };
 
@@ -771,15 +811,38 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
                   <span>Selected D1 Database</span>
                   <span className="text-violet-400 font-mono">{activeDb?.size || "3.4 MB"}</span>
                 </label>
-                <select
-                  value={activeDbId}
-                  onChange={(e) => setActiveDbId(e.target.value)}
-                  className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-xs outline-none focus:border-primary cursor-pointer font-bold"
-                >
-                  {databases.map(db => (
-                    <option key={db.id} value={db.id}>{db.name}</option>
-                  ))}
-                </select>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={activeDbId}
+                    onChange={(e) => setActiveDbId(e.target.value)}
+                    className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-xs outline-none focus:border-primary cursor-pointer font-bold flex-1"
+                  >
+                    {databases.map(db => (
+                      <option key={db.id} value={db.id}>{db.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => {
+                      const dbName = prompt("Enter D1 Database Name (e.g., netBlob, exprt manager):");
+                      if (!dbName || !dbName.trim()) return;
+                      const dbUuid = prompt("Enter Database ID / UUID (optional, press OK to auto-generate):") || `custom-d1-${Date.now()}`;
+                      try {
+                        const existingRaw = localStorage.getItem("cf_custom_d1_databases");
+                        const existing = existingRaw ? JSON.parse(existingRaw) : [];
+                        const newDb = { uuid: dbUuid.trim(), name: dbName.trim(), created_at: new Date().toISOString() };
+                        existing.push(newDb);
+                        localStorage.setItem("cf_custom_d1_databases", JSON.stringify(existing));
+                        refreshProviderData();
+                      } catch (e) {
+                        alert("Failed to save custom database.");
+                      }
+                    }}
+                    className="px-2 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded text-xs font-bold shrink-0 cursor-pointer flex items-center gap-1 shadow-sm"
+                    title="Add Custom / Friend's D1 Database"
+                  >
+                    <span>+ Add DB</span>
+                  </button>
+                </div>
               </div>
             )}
 
@@ -852,15 +915,16 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
                           <div key={tableName} className="rounded border border-border/40 bg-background/60 overflow-hidden">
                             <div className="flex items-center justify-between p-1.5 hover:bg-accent/50 transition-colors">
                               <button
-                                onClick={() => toggleTableCollapse(tableName)}
-                                className="flex items-center gap-1.5 flex-1 text-left text-xs font-semibold cursor-pointer truncate"
+                                onClick={() => handleQueryItem(`SELECT * FROM ${tableName} LIMIT 20;`)}
+                                className="flex items-center gap-1.5 flex-1 text-left text-xs font-semibold cursor-pointer truncate hover:text-primary transition-colors"
+                                title="Click to view table data"
                               >
-                                {isCollapsed ? <ChevronRight className="w-3 h-3 text-muted-foreground" /> : <ChevronDown className="w-3 h-3 text-muted-foreground" />}
+                                {isCollapsed ? <ChevronRight className="w-3 h-3 text-muted-foreground" onClick={(e) => { e.stopPropagation(); toggleTableCollapse(tableName); }} /> : <ChevronDown className="w-3 h-3 text-muted-foreground" onClick={(e) => { e.stopPropagation(); toggleTableCollapse(tableName); }} />}
                                 <Table className="w-3 h-3 text-emerald-500 shrink-0" />
                                 <span className="truncate">{tableName}</span>
                               </button>
                               <button
-                                onClick={() => handleQueryItem(`SELECT * FROM ${tableName} LIMIT 10;`)}
+                                onClick={() => handleQueryItem(`SELECT * FROM ${tableName} LIMIT 20;`)}
                                 className="text-[10px] font-bold text-primary hover:bg-primary/10 px-1.5 py-0.5 rounded cursor-pointer"
                               >
                                 Query

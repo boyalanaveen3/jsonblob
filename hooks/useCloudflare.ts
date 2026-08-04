@@ -110,13 +110,13 @@ export function useCloudflare() {
           error: null,
         });
           if (typeof window !== "undefined") {
-            const primary = accounts[0];
+            const activeForSession = accounts.find((a: any) => a.id === activeAccId) || accounts[0];
             localStorage.setItem("cloudflare_d1_session", JSON.stringify({
               isConnected: true,
-              accountName: primary.name,
-              email: primary.email || null,
-              organization: primary.organization || null,
-              connectedAt: primary.connectedAt || new Date().toISOString(),
+              accountName: activeForSession.name,
+              email: activeForSession.email || null,
+              organization: activeForSession.organization || null,
+              connectedAt: activeForSession.connectedAt || new Date().toISOString(),
             }));
           }
       } else {
@@ -139,6 +139,16 @@ export function useCloudflare() {
     const newDbId = acc && acc.databases.length > 0 ? acc.databases[0].uuid : null;
     if (newDbId && typeof window !== "undefined") {
       localStorage.setItem("cf_selected_db_id", newDbId);
+    }
+    // Update the session localStorage so connection status card reflects new account
+    if (acc && typeof window !== "undefined") {
+      localStorage.setItem("cloudflare_d1_session", JSON.stringify({
+        isConnected: true,
+        accountName: acc.name,
+        email: acc.email || null,
+        organization: acc.organization || null,
+        connectedAt: acc.connectedAt || new Date().toISOString(),
+      }));
     }
 
     setState((prev) => ({

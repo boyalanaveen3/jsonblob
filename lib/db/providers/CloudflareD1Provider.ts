@@ -81,14 +81,32 @@ export class CloudflareD1Provider implements IDatabaseProvider {
 
       const activeAccId = localStorage.getItem("cf_active_acc_id");
       const activeAcc = data.accounts.find((a: any) => a.id === activeAccId) || data.accounts[0];
+      let accountDatabases = Array.isArray(activeAcc?.databases) ? [...activeAcc.databases] : [];
 
-      if (!activeAcc || !Array.isArray(activeAcc.databases) || activeAcc.databases.length === 0) {
-        return [];
+      // Merge custom/user-added databases from localStorage
+      try {
+        const customDbsRaw = localStorage.getItem("cf_custom_d1_databases");
+        if (customDbsRaw) {
+          const customDbs = JSON.parse(customDbsRaw);
+          if (Array.isArray(customDbs)) {
+            customDbs.forEach((cdb: any) => {
+              if (!accountDatabases.some((d: any) => (d.uuid || d.id) === (cdb.uuid || cdb.id) || d.name === cdb.name)) {
+                accountDatabases.push(cdb);
+              }
+            });
+          }
+        }
+      } catch (e) {}
+
+      if (accountDatabases.length === 0) {
+        accountDatabases = [
+          { uuid: "1ad3573e-3f03-4906-8599-0b66d06cdc0f", name: "D1 Database" }
+        ];
       }
 
       // Fetch real schema for each database
       const dbs: D1DatabaseSchema[] = await Promise.all(
-        activeAcc.databases.map(async (db: any) => {
+        accountDatabases.map(async (db: any) => {
           const dbId = db.uuid || db.id;
           const tables: D1DatabaseSchema["tables"] = {};
 

@@ -12,12 +12,6 @@ export async function GET() {
     return NextResponse.json({ isConnected: false });
   }
 
-  const defaultDb = {
-    uuid: "1ad3573e-3f03-4906-8599-0b66d06cdc0f",
-    name: "jsonblob-db",
-    created_at: new Date().toISOString(),
-  };
-
   try {
     let accounts: any[] = [];
     if (sessionCookie?.value) {
@@ -27,21 +21,49 @@ export async function GET() {
       } catch (e) {}
     }
 
+    // Fetch fresh D1 databases from Cloudflare API if databases array is empty
+    if (tokenCookie?.value) {
+      try {
+        const { cloudflareService } = await import("@/lib/services/cloudflare.service");
+        let tokenMap: Record<string, string> = {};
+        try {
+          tokenMap = JSON.parse(tokenCookie.value);
+        } catch (e) {
+          tokenMap = { _default: tokenCookie.value };
+        }
+        const defaultToken = tokenMap._default || tokenCookie.value;
+
+        if (accounts.length === 0) {
+          const rawAccounts = await cloudflareService.getAccounts(defaultToken).catch(() => []);
+          if (rawAccounts.length > 0) {
+            accounts = rawAccounts.map((acc: any) => ({ id: acc.id, name: acc.name, databases: [] }));
+          } else {
+            accounts = [{ id: "connected-account", name: "Connected Cloudflare Account", databases: [] }];
+          }
+        }
+
+        // Fetch D1 databases for each account if missing
+        accounts = await Promise.all(
+          accounts.map(async (acc: any) => {
+            if (Array.isArray(acc.databases) && acc.databases.length > 0) return acc;
+            const token = tokenMap[acc.id] || defaultToken;
+            const dbs = await cloudflareService.getD1Databases(acc.id, token).catch(() => []);
+            return { ...acc, databases: dbs };
+          })
+        );
+      } catch (e) {
+        console.error("[Session] Error fetching D1 databases:", e);
+      }
+    }
+
     if (accounts.length === 0) {
       accounts = [
         {
-          id: "9810a3ca7fbba51cd61dec82f7926973",
-          name: "Cloudflare Production Account",
-          databases: [defaultDb],
+          id: "connected-account",
+          name: "Connected Cloudflare Account",
+          databases: [],
         },
       ];
-    } else {
-      accounts = accounts.map((acc: any) => {
-        if (!Array.isArray(acc.databases) || acc.databases.length === 0) {
-          return { ...acc, databases: [defaultDb] };
-        }
-        return acc;
-      });
     }
 
     return NextResponse.json({

@@ -40,10 +40,8 @@ export async function GET(request: Request) {
   const clientId = getEnv("CLOUDFLARE_CLIENT_ID");
   const clientSecret = getEnv("CLOUDFLARE_CLIENT_SECRET");
 
-  // Use the registered redirect URI from env (must match exactly what Cloudflare has)
-  const redirectUri =
-    getEnv("CLOUDFLARE_REDIRECT_URI") ||
-    `${origin}/api/auth/cloudflare/callback`;
+  // Always use current request origin to match authorize route
+  const redirectUri = `${origin}/api/auth/cloudflare/callback`;
 
   if (!clientId || !clientSecret) {
     console.error("[CF Callback] Missing client credentials");
@@ -118,8 +116,8 @@ export async function GET(request: Request) {
         isConnected: true,
         accounts: [
           {
-            id: "9810a3ca7fbba51cd61dec82f7926973",
-            name: "Cloudflare Production Account",
+            id: "connected-account",
+            name: "Connected Cloudflare Account",
             databases: [],
           },
         ],
