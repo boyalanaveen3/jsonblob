@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { FileJson, Mail, Lock, User, ArrowLeft, Sun, Moon, Sparkles, Database, Code, Check, Cloud, ShieldCheck, CheckCircle, ArrowRight, Terminal } from "lucide-react";
+import { FileJson, Mail, Lock, User, ArrowLeft, Sun, Moon, Sparkles, Database, Code, Check, Cloud, ShieldCheck, CheckCircle, ArrowRight, Terminal, Key, Eye, EyeOff, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signInAction, signUpAction } from "@/actions/auth";
@@ -43,6 +43,12 @@ export default function AuthPage() {
   const [activeSlide, setActiveSlide] = useState(0);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [terminalStep, setTerminalStep] = useState(0);
+
+  // Cloudflare connect tab state
+  const [cfConnectTab, setCfConnectTab] = useState<"oauth" | "apitoken">("oauth");
+  const [apiToken, setApiToken] = useState("");
+  const [accountId, setAccountId] = useState("");
+  const [showToken, setShowToken] = useState(false);
 
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
@@ -99,6 +105,38 @@ export default function AuthPage() {
   const handleCloudflareOAuthRedirect = () => {
     setLoading(true);
     window.location.href = "/api/auth/cloudflare?redirect=" + encodeURIComponent("/?view=sql&provider=cloudflare-d1");
+  };
+
+  const handleApiTokenConnect = async () => {
+    if (!apiToken.trim()) {
+      setMessage({ type: "error", text: "Please enter your Cloudflare API Token." });
+      return;
+    }
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/auth/cloudflare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apiToken: apiToken.trim(),
+          accountId: accountId.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMessage({ type: "success", text: "Connected! Redirecting to SQL Editor..." });
+        setTimeout(() => {
+          window.location.href = "/?view=sql&provider=cloudflare-d1";
+        }, 1000);
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to connect. Check your token and try again." });
+      }
+    } catch (err: any) {
+      setMessage({ type: "error", text: err.message || "Connection failed. Please try again." });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -638,29 +676,57 @@ export default function AuthPage() {
             }}
           >
             
-            {/* CLOUDFLARE D1 SECURE OAUTH CARD (NO MANUAL FIELD INPUTS) */}
+            {/* CLOUDFLARE D1 CONNECT CARD — OAuth + API Token tabs */}
             {isCloudflareFlow ? (
-              <div className="space-y-6 text-center">
-                <div
-                  className="w-16 h-16 rounded-[22px] bg-gradient-to-tr from-violet-500 to-indigo-650 text-white flex items-center justify-center mx-auto shadow-xl shadow-violet-500/20 animate-[logo-float_4s_ease-in-out_infinite] animate-[fade-slide-up_0.6s_ease-out_both]"
-                  style={{ animationDelay: '100ms' }}
-                >
-                  <Cloud className="w-8 h-8" />
-                </div>
+              <div className="space-y-5 animate-[card-entry_0.8s_ease-out_forwards]">
 
-                <div
-                  className="space-y-2 animate-[fade-slide-up_0.6s_ease-out_both]"
-                  style={{ animationDelay: '200ms' }}
-                >
-                  <h2 className="text-xl font-bold tracking-tight">Connect Cloudflare D1</h2>
+                {/* Header */}
+                <div className="text-center space-y-2">
+                  <div
+                    className="w-14 h-14 rounded-[20px] bg-gradient-to-tr from-violet-500 to-indigo-600 text-white flex items-center justify-center mx-auto shadow-xl shadow-violet-500/20 animate-[logo-float_4s_ease-in-out_infinite]"
+                  >
+                    <Cloud className="w-7 h-7" />
+                  </div>
+                  <h2 className="text-xl font-bold tracking-tight mt-1">Connect Cloudflare D1</h2>
                   <p className="text-xs text-muted-foreground leading-relaxed max-w-xs mx-auto">
-                    Connect your Cloudflare account to securely access your D1 databases directly from the SQL Editor.
+                    Access your D1 databases from the SQL Editor.
                   </p>
                 </div>
 
+                {/* Tab Switcher */}
+                <div className="flex bg-black/5 dark:bg-white/[0.04] rounded-xl p-1 border border-black/5 dark:border-white/[0.05]">
+                  <button
+                    id="cf-tab-oauth"
+                    type="button"
+                    onClick={() => { setCfConnectTab("oauth"); setMessage(null); }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${
+                      cfConnectTab === "oauth"
+                        ? "bg-white dark:bg-white/10 text-violet-600 dark:text-violet-400 shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    OAuth Login
+                  </button>
+                  <button
+                    id="cf-tab-apitoken"
+                    type="button"
+                    onClick={() => { setCfConnectTab("apitoken"); setMessage(null); }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${
+                      cfConnectTab === "apitoken"
+                        ? "bg-white dark:bg-white/10 text-violet-600 dark:text-violet-400 shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Key className="w-3.5 h-3.5" />
+                    API Token
+                  </button>
+                </div>
+
+                {/* Message */}
                 {message && (
                   <div
-                    className={`p-3 rounded-xl text-xs text-center border font-semibold transition-all animate-[fade-slide-up_0.6s_ease-out_both] ${
+                    className={`p-3 rounded-xl text-xs text-center border font-semibold transition-all ${
                       message.type === "success"
                         ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-400"
                         : "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/30 text-red-600 dark:text-red-400"
@@ -670,49 +736,125 @@ export default function AuthPage() {
                   </div>
                 )}
 
-                <div
-                  className="text-left space-y-3 p-4 rounded-2xl bg-black/5 dark:bg-white/[0.02] border border-black/5 dark:border-white/[0.05] text-xs text-muted-foreground animate-[fade-slide-up_0.6s_ease-out_both]"
-                  style={{ animationDelay: '300ms' }}
-                >
-                  <div className="flex items-center gap-2.5 font-semibold text-foreground">
-                    <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
-                    <span>Browse D1 databases</span>
+                {/* ── TAB 1: OAuth ── */}
+                {cfConnectTab === "oauth" && (
+                  <div className="space-y-4 animate-[fade-slide-up_0.4s_ease-out_both]">
+                    <div className="text-left space-y-2.5 p-4 rounded-2xl bg-black/5 dark:bg-white/[0.02] border border-black/5 dark:border-white/[0.05] text-xs text-muted-foreground">
+                      {[
+                        "Browse D1 databases",
+                        "View tables & schema",
+                        "Execute SQL queries",
+                        "AI-powered SQL assistance",
+                        "Secure OAuth authentication",
+                      ].map((feat) => (
+                        <div key={feat} className="flex items-center gap-2.5 font-semibold text-foreground">
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          <span>{feat}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      id="cf-oauth-connect-btn"
+                      type="button"
+                      disabled={loading}
+                      onClick={handleCloudflareOAuthRedirect}
+                      className={`w-full py-3 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-violet-600/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 hover:-translate-y-0.5 hover:scale-[1.02] active:scale-[0.98] ${
+                        loading ? "animate-[gradient-shimmer_2s_linear_infinite]" : ""
+                      }`}
+                    >
+                      {loading ? (
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <ShieldCheck className="w-4 h-4" />
+                      )}
+                      <span>Continue with Cloudflare</span>
+                      <ArrowRight className="w-4 h-4 ml-1" />
+                    </button>
                   </div>
-                  <div className="flex items-center gap-2.5 font-semibold text-foreground">
-                    <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
-                    <span>View tables & schema</span>
-                  </div>
-                  <div className="flex items-center gap-2.5 font-semibold text-foreground">
-                    <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
-                    <span>Execute SQL queries</span>
-                  </div>
-                  <div className="flex items-center gap-2.5 font-semibold text-foreground">
-                    <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
-                    <span>AI-powered SQL assistance</span>
-                  </div>
-                  <div className="flex items-center gap-2.5 font-semibold text-foreground">
-                    <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
-                    <span>Secure OAuth authentication</span>
-                  </div>
-                </div>
+                )}
 
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={handleCloudflareOAuthRedirect}
-                  className={`w-full py-3 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-violet-600/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 hover:-translate-y-0.5 hover:scale-[1.02] active:scale-[0.98] animate-[fade-slide-up_0.6s_ease-out_both] ${
-                    loading ? "bg-gradient-to-r from-violet-650 via-indigo-600 to-violet-650 bg-[length:200%_auto] animate-[gradient-shimmer_2s_linear_infinite]" : ""
-                  }`}
-                  style={{ animationDelay: '400ms' }}
-                >
-                  {loading ? (
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <ShieldCheck className="w-4 h-4" />
-                  )}
-                  <span>Continue with Cloudflare</span>
-                  <ArrowRight className="w-4 h-4 ml-1" />
-                </button>
+                {/* ── TAB 2: API Token ── */}
+                {cfConnectTab === "apitoken" && (
+                  <div className="space-y-4 animate-[fade-slide-up_0.4s_ease-out_both]">
+
+                    {/* How to get token link */}
+                    <a
+                      href="https://dash.cloudflare.com/profile/api-tokens"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between w-full p-3 rounded-xl bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800/30 text-xs font-semibold text-violet-700 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-950/30 transition-colors group"
+                    >
+                      <span>Get your API Token from Cloudflare Dashboard</span>
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+                    </a>
+
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Create a token using the <strong className="text-foreground">"Edit Cloudflare Workers"</strong> template — it includes D1 read/write access.
+                    </p>
+
+                    {/* API Token Field */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground">API Token <span className="text-red-500">*</span></label>
+                      <div className="relative flex items-center group">
+                        <Key className="w-4 h-4 absolute left-3 text-muted-foreground group-focus-within:text-violet-500 transition-colors" />
+                        <input
+                          id="cf-api-token-input"
+                          type={showToken ? "text" : "password"}
+                          placeholder="cfoc_xxxxxxxxxxxxxxxx..."
+                          value={apiToken}
+                          onChange={(e) => setApiToken(e.target.value)}
+                          className="w-full pl-9 pr-10 py-2.5 bg-background dark:bg-[#0c1017] text-foreground dark:text-white border border-border dark:border-white/10 rounded-xl text-sm font-mono outline-none transition-all focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 placeholder:text-muted-foreground/40 placeholder:font-sans"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowToken(!showToken)}
+                          className="absolute right-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          tabIndex={-1}
+                        >
+                          {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Account ID Field */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground">
+                        Account ID
+                        <span className="ml-1.5 font-normal text-muted-foreground/70">(optional — auto-detected)</span>
+                      </label>
+                      <div className="relative flex items-center group">
+                        <Database className="w-4 h-4 absolute left-3 text-muted-foreground group-focus-within:text-violet-500 transition-colors" />
+                        <input
+                          id="cf-account-id-input"
+                          type="text"
+                          placeholder="e.g. a16eafc27dc801faf18e..."
+                          value={accountId}
+                          onChange={(e) => setAccountId(e.target.value)}
+                          className="w-full pl-9 pr-4 py-2.5 bg-background dark:bg-[#0c1017] text-foreground dark:text-white border border-border dark:border-white/10 rounded-xl text-sm font-mono outline-none transition-all focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 placeholder:text-muted-foreground/40 placeholder:font-sans"
+                        />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground pl-1">
+                        Found in Cloudflare Dashboard → right sidebar under your domain.
+                      </p>
+                    </div>
+
+                    <button
+                      id="cf-apitoken-connect-btn"
+                      type="button"
+                      disabled={loading || !apiToken.trim()}
+                      onClick={handleApiTokenConnect}
+                      className="w-full py-3 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-violet-600/25 flex items-center justify-center gap-2 cursor-pointer hover:-translate-y-0.5 hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      {loading ? (
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Key className="w-4 h-4" />
+                      )}
+                      <span>Connect with API Token</span>
+                    </button>
+                  </div>
+                )}
+
               </div>
             ) : (
               /* STANDARD AUTH FORM */
