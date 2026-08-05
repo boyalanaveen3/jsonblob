@@ -5,9 +5,6 @@ import { cookies } from "next/headers";
 import { cloudflareService } from "@/lib/services/cloudflare.service";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 
-const DEFAULT_CLIENT_ID = "1cc954f25945e1e46bf4a5ac1d268cc3";
-const DEFAULT_CLIENT_SECRET = "cfoc_oCGnle064bwCNvkS8anivkY4ckctuF8m0x5gE9g9ff59553c";
-
 function getEnv(key: string): string {
   try {
     const ctx = getRequestContext();
@@ -15,8 +12,6 @@ function getEnv(key: string): string {
     if (env && typeof env[key] === "string" && env[key]) return env[key] as string;
   } catch (e) {}
   if (process.env[key]) return process.env[key] as string;
-  if (key === "CLOUDFLARE_CLIENT_ID") return DEFAULT_CLIENT_ID;
-  if (key === "CLOUDFLARE_CLIENT_SECRET") return DEFAULT_CLIENT_SECRET;
   return "";
 }
 
@@ -100,42 +95,15 @@ export async function GET(request: Request) {
     }
 
     if (!tokenRes || !tokenRes.ok) {
-      console.warn("[CF Callback] Token exchange endpoint returned error. Finalizing session and granting database access.");
-      const cookieStore = await cookies();
-      const fallbackToken = `cf_access_token_${Date.now()}`;
-
-      cookieStore.set("cf_d1_access_token", JSON.stringify({ _default: fallbackToken }), {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        maxAge: 60 * 60 * 24 * 30,
-      });
-
-      const fallbackSession = {
-        isConnected: true,
-        accounts: [
-          {
-            id: "connected-account",
-            name: "Connected Cloudflare Account",
-            databases: [],
-          },
-        ],
-        connectedAt: new Date().toISOString(),
-      };
-
-      cookieStore.set("cf_d1_oauth_session", JSON.stringify(fallbackSession), {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        maxAge: 60 * 60 * 24 * 30,
-      });
-
-      const successUrl = new URL(redirectPath, origin);
-      successUrl.searchParams.set("provider", "cloudflare-d1");
-      successUrl.searchParams.set("oauth", "success");
-      return NextResponse.redirect(successUrl);
+      let errorText = "token_exchange_failed";
+      try {
+        const errBody: any = await tokenRes?.json();
+        errorText = errBody?.error_description || errBody?.error || errorText;
+      } catch (e) {}
+      console.error("[CF Callback] Token exchange failed:", errorText);
+      return NextResponse.redirect(
+        new URL(`/auth?provider=cloudflare-d1&error=token_exchange_failed&reason=${encodeURIComponent(errorText)}`, origin)
+      );
     }
 
     const tokenData: any = await tokenRes.json();

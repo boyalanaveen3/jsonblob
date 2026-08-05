@@ -4,9 +4,6 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 
-const DEFAULT_CLIENT_ID = "1cc954f25945e1e46bf4a5ac1d268cc3";
-const DEFAULT_CLIENT_SECRET = "cfoc_oCGnle064bwCNvkS8anivkY4ckctuF8m0x5gE9g9ff59553c";
-
 function getEnv(key: string): string {
   try {
     const ctx = getRequestContext();
@@ -14,8 +11,6 @@ function getEnv(key: string): string {
     if (env && typeof env[key] === "string" && env[key]) return env[key] as string;
   } catch (e) {}
   if (process.env[key]) return process.env[key] as string;
-  if (key === "CLOUDFLARE_CLIENT_ID") return DEFAULT_CLIENT_ID;
-  if (key === "CLOUDFLARE_CLIENT_SECRET") return DEFAULT_CLIENT_SECRET;
   return "";
 }
 
