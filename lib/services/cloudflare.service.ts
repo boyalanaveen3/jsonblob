@@ -14,7 +14,7 @@ export interface CloudflareD1Database {
 
 export interface CloudflareQueryResponse {
   success: boolean;
-  results?: Array<{
+  result?: Array<{
     results?: Array<Record<string, any>>;
     success?: boolean;
     meta?: {

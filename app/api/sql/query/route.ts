@@ -21,15 +21,26 @@ export async function POST(request: Request) {
     const cookieStore = await cookies();
     const tokenCookie = cookieStore.get("cf_d1_access_token");
 
-    let token = tokenCookie?.value || "";
+    let token = "";
     try {
       if (tokenCookie?.value) {
         const parsedMap = JSON.parse(tokenCookie.value);
         if (typeof parsedMap === "object" && parsedMap !== null) {
-          token = (accountId && parsedMap[accountId]) || parsedMap["_default"] || Object.values(parsedMap)[0] || "";
+          token = (accountId && parsedMap[accountId]) || parsedMap["_default"] || Object.values(parsedMap)[0] as string || "";
         }
       }
     } catch (e) {}
+
+    // Fallback: read token from session cookie (_tok field) if access token cookie missing
+    if (!token) {
+      try {
+        const sessionCookie = cookieStore.get("cf_d1_oauth_session");
+        if (sessionCookie?.value) {
+          const session = JSON.parse(sessionCookie.value);
+          token = session._tok || "";
+        }
+      } catch (e) {}
+    }
 
     // Check if databaseId targets the bound Pages D1 DB (e.g. netblob or default)
     const isMainBoundDb = !databaseId || databaseId === "default" || databaseId === "1ad3573e-3f03-4906-8599-0b66d06cdc0f" || databaseId === "netblob-d1-db-001";
@@ -57,11 +68,11 @@ export async function POST(request: Request) {
     if (token && accountId && databaseId) {
       const response = await cloudflareService.executeQuery(accountId, databaseId, sql, token);
 
-      if (response.success && response.results) {
+      if (response.success && response.result) {
         return NextResponse.json({
           success: true,
-          results: response.results[0]?.results || [],
-          meta: response.results[0]?.meta || { duration: 12 },
+          results: response.result[0]?.results || [],
+          meta: response.result[0]?.meta || { duration: 12 },
         });
       } else if (response.errors && response.errors.length > 0) {
         return NextResponse.json(

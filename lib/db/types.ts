@@ -55,6 +55,7 @@ export interface D1DatabaseSchema {
   views?: Record<string, ViewDefinition>;
   indexes?: Record<string, IndexDefinition>;
   triggers?: Record<string, TriggerDefinition>;
+  schemaError?: string;
 }
 
 export interface QueryExecutionResult {

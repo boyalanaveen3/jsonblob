@@ -81,22 +81,8 @@ export class CloudflareD1Provider implements IDatabaseProvider {
 
       const activeAccId = localStorage.getItem("cf_active_acc_id");
       const activeAcc = data.accounts.find((a: any) => a.id === activeAccId) || data.accounts[0];
+      // Use ONLY fresh API databases — do NOT merge stale localStorage to avoid wrong UUIDs
       let accountDatabases = Array.isArray(activeAcc?.databases) ? [...activeAcc.databases] : [];
-
-      // Merge custom/user-added databases from localStorage
-      try {
-        const customDbsRaw = localStorage.getItem("cf_custom_d1_databases");
-        if (customDbsRaw) {
-          const customDbs = JSON.parse(customDbsRaw);
-          if (Array.isArray(customDbs)) {
-            customDbs.forEach((cdb: any) => {
-              if (!accountDatabases.some((d: any) => (d.uuid || d.id) === (cdb.uuid || cdb.id) || d.name === cdb.name)) {
-                accountDatabases.push(cdb);
-              }
-            });
-          }
-        }
-      } catch (e) {}
 
       if (accountDatabases.length === 0) {
         accountDatabases = [
@@ -109,6 +95,7 @@ export class CloudflareD1Provider implements IDatabaseProvider {
         accountDatabases.map(async (db: any) => {
           const dbId = db.uuid || db.id;
           const tables: D1DatabaseSchema["tables"] = {};
+          let schemaError: string | undefined = undefined;
 
           try {
             // Get table list
@@ -124,10 +111,6 @@ export class CloudflareD1Provider implements IDatabaseProvider {
             const tableData: any = await tableRes.json().catch(() => ({}));
 
             if (tableRes.ok && tableData.success && Array.isArray(tableData.results)) {
-              if (tableData.results.length === 0) {
-                // Database has no user tables — mark clearly
-                tables["__empty__"] = { columns: [], rows: [], _hint: "No tables found in this database." } as any;
-              }
               await Promise.all(
                 tableData.results.map(async (row: any) => {
                   const tableName: string = row.name;
@@ -158,20 +141,14 @@ export class CloudflareD1Provider implements IDatabaseProvider {
                 })
               );
             } else {
-              // Query failed — store the error so it's visible in the UI
               const errMsg = tableData.error || `HTTP ${tableRes.status}: Failed to fetch tables`;
               console.error(`[D1 Schema] ${db.name} (${dbId}):`, errMsg);
-              tables["⚠ Error loading tables"] = {
-                columns: [{ name: errMsg, type: "ERROR", isPrimaryKey: false }],
-                rows: [],
-              } as any;
+              // Store error on the DB object, NOT as a fake table name
+              schemaError = errMsg;
             }
           } catch (err: any) {
             console.error(`[D1 Schema] Exception for ${db.name}:`, err);
-            tables["⚠ Error loading tables"] = {
-              columns: [{ name: err?.message || "Unknown error", type: "ERROR", isPrimaryKey: false }],
-              rows: [],
-            } as any;
+            schemaError = err?.message || "Unknown error fetching schema";
           }
 
           return {
@@ -181,6 +158,7 @@ export class CloudflareD1Provider implements IDatabaseProvider {
             sqliteVersion: "SQLite 3.45.1 (Cloudflare D1)",
             lastUpdated: db.created_at ? new Date(db.created_at).toLocaleDateString() : "Active",
             tables,
+            schemaError,
           };
         })
       );

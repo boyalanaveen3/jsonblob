@@ -965,8 +965,16 @@ export function SqlEditorView({ isDark, userName, onSaveAsBlob }: SqlEditorViewP
 
                 {showTablesSection && (
                   <div className="p-1.5 space-y-1.5">
+                    {activeDb?.schemaError && (
+                      <div className="p-2 text-xs bg-red-500/10 border border-red-500/20 rounded text-red-400 font-mono text-[10px] break-all leading-normal">
+                        <p className="font-semibold mb-0.5">Schema Error:</p>
+                        <p>{activeDb.schemaError}</p>
+                      </div>
+                    )}
                     {(!activeDb?.tables || Object.keys(activeDb.tables).length === 0) ? (
-                      <span className="text-[11px] text-muted-foreground italic px-2">No tables created.</span>
+                      <span className="text-[11px] text-muted-foreground italic px-2">
+                        {activeDb?.schemaError ? "Failed to load tables." : "No tables created."}
+                      </span>
                     ) : (
                       Object.entries(activeDb.tables).map(([tableName, tableData]) => {
                         const isCollapsed = collapsedTables[tableName];

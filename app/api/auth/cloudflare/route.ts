@@ -108,29 +108,27 @@ export async function POST(request: Request) {
       const tokenMap: Record<string, string> = { _default: apiToken };
       accounts.forEach((acc: any) => { tokenMap[acc.id] = apiToken; });
 
+      // Store token inside session too — reliable fallback for edge runtime
       const sessionData = {
         isConnected: true,
         accounts,
         connectedAt: new Date().toISOString(),
+        _tok: apiToken,
       };
 
-      cookieStore.set("cf_d1_oauth_session", JSON.stringify(sessionData), {
+      const cookieOpts = {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
+        secure: true,
+        sameSite: "lax" as const,
         path: "/",
         maxAge: 60 * 60 * 24 * 30,
-      });
+      };
 
-      cookieStore.set("cf_d1_access_token", JSON.stringify(tokenMap), {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        maxAge: 60 * 60 * 24 * 30,
-      });
-
-      return NextResponse.json({ success: true, session: sessionData });
+      // Use response.cookies.set() — works reliably in Cloudflare edge runtime
+      const response = NextResponse.json({ success: true, session: { ...sessionData, _tok: undefined } });
+      response.cookies.set("cf_d1_oauth_session", JSON.stringify(sessionData), cookieOpts);
+      response.cookies.set("cf_d1_access_token", JSON.stringify(tokenMap), cookieOpts);
+      return response;
     } catch (e: any) {
       console.error("[CF POST] Error:", e);
       return NextResponse.json({ success: false, error: e.message || "Failed to connect" }, { status: 500 });
