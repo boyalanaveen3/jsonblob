@@ -124,6 +124,10 @@ export class CloudflareD1Provider implements IDatabaseProvider {
             const tableData: any = await tableRes.json().catch(() => ({}));
 
             if (tableRes.ok && tableData.success && Array.isArray(tableData.results)) {
+              if (tableData.results.length === 0) {
+                // Database has no user tables — mark clearly
+                tables["__empty__"] = { columns: [], rows: [], _hint: "No tables found in this database." } as any;
+              }
               await Promise.all(
                 tableData.results.map(async (row: any) => {
                   const tableName: string = row.name;
@@ -153,9 +157,21 @@ export class CloudflareD1Provider implements IDatabaseProvider {
                   }
                 })
               );
+            } else {
+              // Query failed — store the error so it's visible in the UI
+              const errMsg = tableData.error || `HTTP ${tableRes.status}: Failed to fetch tables`;
+              console.error(`[D1 Schema] ${db.name} (${dbId}):`, errMsg);
+              tables["⚠ Error loading tables"] = {
+                columns: [{ name: errMsg, type: "ERROR", isPrimaryKey: false }],
+                rows: [],
+              } as any;
             }
-          } catch {
-            // return db with empty tables on error
+          } catch (err: any) {
+            console.error(`[D1 Schema] Exception for ${db.name}:`, err);
+            tables["⚠ Error loading tables"] = {
+              columns: [{ name: err?.message || "Unknown error", type: "ERROR", isPrimaryKey: false }],
+              rows: [],
+            } as any;
           }
 
           return {

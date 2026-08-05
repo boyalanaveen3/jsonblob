@@ -61,77 +61,80 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body: any = await request.json();
-    const { apiToken, accountId, databaseId, databaseName } = body;
+    const { apiToken, accountId } = body;
+
+    if (!apiToken) {
+      return NextResponse.json({ success: false, error: "API token is required" }, { status: 400 });
+    }
 
     const cookieStore = await cookies();
-    const existingSessionCookie = cookieStore.get("cf_d1_oauth_session");
-    let existingSession: any = null;
+
     try {
-      if (existingSessionCookie?.value) {
-        existingSession = JSON.parse(existingSessionCookie.value);
+      // Dynamically import cloudflareService (edge-safe)
+      const { cloudflareService } = await import("@/lib/services/cloudflare.service");
+
+      // Fetch real accounts from Cloudflare API
+      let rawAccounts: any[] = [];
+      try {
+        rawAccounts = await cloudflareService.getAccounts(apiToken);
+      } catch (e) {
+        console.warn("[CF POST] Could not fetch accounts:", e);
       }
-    } catch (e) {}
 
-    const token = apiToken || `token_${Date.now()}`;
-    const accId = accountId || "a16eafc27dc801faf18eefe371127022";
-    const dbId = databaseId || "1e69a13a-8722-448d-92d9-55def2014960";
-    const dbName = databaseName || "Cloudflare D1 Database";
+      // If a specific accountId was given, filter to just that one
+      if (accountId && rawAccounts.length > 0) {
+        rawAccounts = rawAccounts.filter((a: any) => a.id === accountId);
+      }
 
-    let accounts = Array.isArray(existingSession?.accounts) ? existingSession.accounts : [];
-    let accIndex = accounts.findIndex((a: any) => a.id === accId);
-    if (accIndex === -1) {
-      accounts.push({
-        id: accId,
-        name: `Cloudflare Account (${accId.slice(0, 8)}...)`,
-        databases: [{ uuid: dbId, name: dbName, created_at: new Date().toISOString() }],
+      // Fallback if no accounts found
+      if (rawAccounts.length === 0 && accountId) {
+        rawAccounts = [{ id: accountId, name: `Cloudflare Account (${accountId.slice(0, 8)}...)` }];
+      } else if (rawAccounts.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "Could not fetch accounts. Check your API token has the correct permissions." },
+          { status: 401 }
+        );
+      }
+
+      // Fetch D1 databases for each account in parallel
+      const accounts = await Promise.all(
+        rawAccounts.map(async (acc: any) => {
+          const dbs = await cloudflareService.getD1Databases(acc.id, apiToken).catch(() => []);
+          return { id: acc.id, name: acc.name, databases: dbs || [] };
+        })
+      );
+
+      // Build token map (one token per account + default)
+      const tokenMap: Record<string, string> = { _default: apiToken };
+      accounts.forEach((acc: any) => { tokenMap[acc.id] = apiToken; });
+
+      const sessionData = {
+        isConnected: true,
+        accounts,
+        connectedAt: new Date().toISOString(),
+      };
+
+      cookieStore.set("cf_d1_oauth_session", JSON.stringify(sessionData), {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 30,
       });
-    } else {
-      let dbs = accounts[accIndex].databases || [];
-      if (!dbs.some((d: any) => (d.uuid || d.id) === dbId)) {
-        dbs.push({ uuid: dbId, name: dbName, created_at: new Date().toISOString() });
-      }
-      accounts[accIndex].databases = dbs;
+
+      cookieStore.set("cf_d1_access_token", JSON.stringify(tokenMap), {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 30,
+      });
+
+      return NextResponse.json({ success: true, session: sessionData });
+    } catch (e: any) {
+      console.error("[CF POST] Error:", e);
+      return NextResponse.json({ success: false, error: e.message || "Failed to connect" }, { status: 500 });
     }
-
-    const sessionData = {
-      isConnected: true,
-      accounts,
-      connectedAt: new Date().toISOString(),
-    };
-
-    cookieStore.set("cf_d1_oauth_session", JSON.stringify(sessionData), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30,
-    });
-
-    const existingTokenCookie = cookieStore.get("cf_d1_access_token");
-    let tokenMap: Record<string, string> = {};
-    try {
-      if (existingTokenCookie?.value) {
-        tokenMap = JSON.parse(existingTokenCookie.value);
-      }
-    } catch (e) {}
-
-    if (apiToken) {
-      tokenMap[accId] = apiToken;
-      tokenMap["_default"] = apiToken;
-    } else {
-      tokenMap[accId] = tokenMap[accId] || token;
-      tokenMap["_default"] = tokenMap["_default"] || token;
-    }
-
-    cookieStore.set("cf_d1_access_token", JSON.stringify(tokenMap), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30,
-    });
-
-    return NextResponse.json({ success: true, session: sessionData });
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e.message || "Failed to save connection" }, { status: 500 });
   }
