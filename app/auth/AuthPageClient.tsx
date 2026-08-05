@@ -123,7 +123,7 @@ export default function AuthPage() {
           accountId: accountId.trim() || undefined,
         }),
       });
-      const data = await res.json();
+      const data = await res.json() as any;
       if (data.success) {
         setMessage({ type: "success", text: "Connected! Redirecting to SQL Editor..." });
         setTimeout(() => {
