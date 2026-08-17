@@ -179,21 +179,19 @@ export function TestRunsTab({ onSelectRunForReport, onNavigateTab }: TestRunsTab
                   <tr key={r.id} className="hover:bg-accent/40 transition-colors">
                     <td className="py-3.5 px-4 font-mono font-bold text-foreground">#{r.id.slice(0, 8)}</td>
                     <td className="py-3.5 px-4">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                        r.platform === "mobile" ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" : "bg-sky-500/10 text-sky-400 border border-sky-500/20"
-                      }`}>
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${r.platform === "mobile" ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" : "bg-sky-500/10 text-sky-400 border border-sky-500/20"
+                        }`}>
                         {r.platform === "mobile" ? <Smartphone className="w-3 h-3" /> : <Globe className="w-3 h-3" />}
                         {r.platform === "mobile" ? "Maestro" : "Playwright"}
                       </span>
                     </td>
                     <td className="py-3.5 px-4">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                        r.status === "passed"
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${r.status === "passed"
                           ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                           : r.status === "failed"
-                          ? "bg-red-500/10 text-red-400 border border-red-500/20"
-                          : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                      }`}>
+                            ? "bg-red-500/10 text-red-400 border border-red-500/20"
+                            : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                        }`}>
                         {r.status === "passed" && <CheckCircle2 className="w-3 h-3" />}
                         {r.status === "failed" && <XCircle className="w-3 h-3" />}
                         {(r.status === "queued" || r.status === "running") && <Clock className="w-3 h-3 animate-spin" />}
