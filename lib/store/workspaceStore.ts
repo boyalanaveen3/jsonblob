@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type ViewType = "dashboard" | "workspace" | "sql" | "api" | "collections" | "settings" | "conversion" | "news";
+export type ViewType = "dashboard" | "workspace" | "sql" | "api" | "collections" | "settings" | "conversion" | "news" | "test-automation";
 
 export interface SqlTab {
   id: string;

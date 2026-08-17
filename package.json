@@ -15,7 +15,9 @@
     "test:unit": "node tests/unit/test-playground-suite.js",
     "test:api": "npx tsx tests/api/api-endpoints.test.ts",
     "test:integration": "npx tsx tests/integration/test-storage-verification.ts && npx tsx tests/integration/test-api-studio-verification.ts",
-    "test:e2e": "node tests/e2e/test-e2e-suite.js"
+    "test:automation": "npx tsx tests/integration/test-test-automation-verification.ts",
+    "test:e2e": "node tests/e2e/test-e2e-suite.js",
+    "test-runner": "npx tsx scripts/test-runner.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

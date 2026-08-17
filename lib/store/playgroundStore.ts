@@ -63,7 +63,7 @@ export const usePlaygroundStore = create<PlaygroundState>((set, get) => ({
     {
       id: "scratch-js",
       title: "scratchpad.js",
-      content: `// Code Playground - JavaScript Sandbox\n// Press "Run" or (Ctrl+Enter) to execute code\n\nconsole.log("Hello, World!");\n\n// Try creating loops or complex arrays\nconst numbers = [1, 2, 3, 4, 5];\nconst doubled = numbers.map(n => n * 2);\nconsole.log("Doubled numbers:", doubled);\n`,
+      content: `// Code Playground - JavaScript Sandbox\n// Press "Run" or (Ctrl+Enter) to execute code\n\nconsole.log("Hello, World!");\n\n// Try creating loops or complex arrays\nconst numbers = [1, 2, 3, 4, 5];\nconst doubled = numbers.map((n) => n * 2);\nconsole.log("Doubled numbers:", doubled);\n`,
       language: "javascript",
       isDirty: false,
     },
@@ -158,7 +158,7 @@ export const usePlaygroundStore = create<PlaygroundState>((set, get) => ({
     const lowerLang = language.toLowerCase();
     if (lowerLang === "javascript") {
       title = "scratchpad.js";
-      content = `// Code Playground - JavaScript Sandbox\n// Press "Run" or (Ctrl+Enter) to execute code\n\nconsole.log("Hello, World!");\n\n// Try creating loops or complex arrays\nconst numbers = [1, 2, 3, 4, 5];\nconst doubled = numbers.map(n => n * 2);\nconsole.log("Doubled numbers:", doubled);\n`;
+      content = `// Code Playground - JavaScript Sandbox\n// Press "Run" or (Ctrl+Enter) to execute code\n\nconsole.log("Hello, World!");\n\n// Try creating loops or complex arrays\nconst numbers = [1, 2, 3, 4, 5];\nconst doubled = numbers.map((n) => n * 2);\nconsole.log("Doubled numbers:", doubled);\n`;
     } else if (lowerLang === "typescript") {
       title = "scratchpad.ts";
       content = `// TypeScript Sandbox\ninterface Employee {\n  id: number;\n  name: string;\n  role: string;\n}\n\nconst employees: Employee[] = [\n  { id: 1, name: "Naveen", role: "Frontend" },\n  { id: 2, name: "John", role: "Backend" },\n  { id: 3, name: "Alice", role: "QA" }\n];\n\nconsole.log("=== Employee List ===");\nfor (const emp of employees) {\n  console.log(\`\${emp.id} - \${emp.name} (\${emp.role})\`);\n}\n\nconst frontend: Employee[] = employees.filter(emp => emp.role === "Frontend");\nconsole.log("Frontend Team:", frontend);\n`;

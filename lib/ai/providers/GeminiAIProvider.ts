@@ -112,6 +112,52 @@ export class GeminiAIProvider implements IAIProvider {
     const pLower = prompt.toLowerCase();
     const activeTableName = ctx.activeTable || (ctx.activeDatabase?.tables ? Object.keys(ctx.activeDatabase.tables)[0] : "users");
 
+    // 1. DDL: Create Table / Schema
+    if (pLower.includes("create") || pLower.includes("schema") || pLower.includes("table")) {
+      const match = pLower.match(/(?:create|schema|table)\s+([a-zA-Z0-9_]+)/i);
+      const tableName = match && match[1] && !["table", "schema", "for", "a"].includes(match[1]) ? match[1] : "employees";
+      return `-- DDL Schema Statement for "${tableName}"
+CREATE TABLE IF NOT EXISTS ${tableName} (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  role TEXT DEFAULT 'employee',
+  department TEXT,
+  salary REAL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);`;
+    }
+
+    // 2. DML: Insert / Add Record
+    if (pLower.includes("add") || pLower.includes("insert") || pLower.includes("new")) {
+      const match = pLower.match(/(?:add|insert|new)\s+([a-zA-Z0-9_]+)/i);
+      const targetTable = match && match[1] && !["one", "a", "user", "record", "data"].includes(match[1]) ? match[1] : activeTableName;
+      if (targetTable === "users") {
+        return `-- Insert New Record into "${targetTable}"
+INSERT INTO users (name, email, role, status, created_at)
+VALUES ('New User', 'newuser@example.com', 'user', 'active', CURRENT_TIMESTAMP);`;
+      }
+      return `-- Insert New Record into "${targetTable}"
+INSERT INTO ${targetTable} (name, email, created_at)
+VALUES ('New Entry', 'entry@example.com', CURRENT_TIMESTAMP);`;
+    }
+
+    // 3. DML: Update / Edit
+    if (pLower.includes("update") || pLower.includes("modify") || pLower.includes("change")) {
+      return `-- Update Statement for "${activeTableName}"
+UPDATE ${activeTableName}
+SET status = 'active', updated_at = CURRENT_TIMESTAMP
+WHERE id = 1;`;
+    }
+
+    // 4. DML: Delete / Remove
+    if (pLower.includes("delete") || pLower.includes("remove")) {
+      return `-- Delete Statement for "${activeTableName}"
+DELETE FROM ${activeTableName}
+WHERE id = 1;`;
+    }
+
+    // 5. Select / Filter / Sort
     if (pLower.includes("top 10") || pLower.includes("highest")) {
       return `-- Generated SQL for: "${prompt}"\nSELECT * FROM ${activeTableName}\nORDER BY id DESC\nLIMIT 10;`;
     }
@@ -205,23 +251,122 @@ export class GeminiAIProvider implements IAIProvider {
   }
 
   async chat(userMessage: string, history: Array<{ role: "user" | "assistant"; content: string }>, ctx: AIContext): Promise<string> {
-    const msg = userMessage.toLowerCase();
+    const msg = userMessage.toLowerCase().trim();
     const activeTableName = ctx.activeTable || "users";
+    const provider = ctx.providerName || "SQLite (Default)";
 
+    // 1. Table Creation / DDL Schema Requests (e.g., "create employeschema", "create table employee", "schema for products")
+    if (msg.includes("schema") || msg.includes("create table") || msg.includes("create ")) {
+      let targetTable = "employees";
+      const match = msg.match(/(?:create|schema|table)\s+([a-zA-Z0-9_]+)/);
+      if (match && match[1] && !["table", "schema", "a", "for"].includes(match[1])) {
+        targetTable = match[1].replace(/schema$/i, "") || "employees";
+        if (!targetTable.endsWith("s")) targetTable += "s";
+      }
+
+      return `Here is the complete DDL statement to create the **${targetTable}** table schema on **${provider}**:
+
+\`\`\`sql
+CREATE TABLE IF NOT EXISTS ${targetTable} (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  role TEXT DEFAULT 'Employee',
+  department TEXT,
+  salary REAL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+\`\`\`
+
+💡 **Schema Details**:
+- \`id\`: Auto-incrementing primary key.
+- \`email\`: Enforces unique constraint.
+- \`created_at\`: Automatically stores the creation timestamp.`;
+    }
+
+    // 2. Insert / Add Record Requests (e.g., "I need to add one user", "insert employee", "add record")
+    if (msg.includes("add") || msg.includes("insert") || msg.includes("new user") || msg.includes("create user")) {
+      const isUserTable = activeTableName === "users" || msg.includes("user");
+      const targetTable = isUserTable ? "users" : activeTableName;
+
+      if (targetTable === "users") {
+        return `Here is the SQL query to insert a new user into the **users** table on **${provider}**:
+
+\`\`\`sql
+INSERT INTO users (name, email, role, status, created_at)
+VALUES ('Naveen Boyala', 'naveen@example.com', 'Admin', 'active', CURRENT_TIMESTAMP);
+\`\`\`
+
+You can copy and run this query in the SQL editor to insert the record!`;
+      }
+
+      return `Here is the SQL query to insert a new record into table **${targetTable}**:
+
+\`\`\`sql
+INSERT INTO ${targetTable} (name, email, status, created_at)
+VALUES ('New Record', 'contact@domain.com', 'active', CURRENT_TIMESTAMP);
+\`\`\``;
+    }
+
+    // 3. Query / Select Requests
+    if (msg.includes("select") || msg.includes("get") || msg.includes("show") || msg.includes("list") || msg.includes("find") || msg.includes("fetch")) {
+      return `Here is a query to retrieve records from **${activeTableName}**:
+
+\`\`\`sql
+SELECT * FROM ${activeTableName}
+WHERE 1=1
+ORDER BY id DESC
+LIMIT 10;
+\`\`\`
+
+You can customize the \`WHERE\` condition to filter specific columns.`;
+    }
+
+    // 4. Update Requests
+    if (msg.includes("update") || msg.includes("modify") || msg.includes("change")) {
+      return `Here is an UPDATE query template for **${activeTableName}**:
+
+\`\`\`sql
+UPDATE ${activeTableName}
+SET status = 'active'
+WHERE id = 1;
+\`\`\``;
+    }
+
+    // 5. Delete Requests
+    if (msg.includes("delete") || msg.includes("remove")) {
+      return `Here is a DELETE statement template for **${activeTableName}**:
+
+\`\`\`sql
+DELETE FROM ${activeTableName}
+WHERE id = 1;
+\`\`\``;
+    }
+
+    // 6. Explain / Breakdown
     if (msg.includes("explain") || msg.includes("what does")) {
-      return `This query is running on **${ctx.providerName}**. It interacts with table \`${activeTableName}\`. You can run **Explain SQL** from the toolbar above for a granular breakdown.`;
+      return `This query is running on **${provider}**. It interacts with table \`${activeTableName}\`. You can run **Explain SQL** from the toolbar above for a granular breakdown.`;
     }
-    if (msg.includes("slow") || msg.includes("index") || msg.includes("performance")) {
-      return `To speed up performance on **${ctx.providerName}**:\n1. Ensure columns in your \`WHERE\` and \`JOIN\` clauses are indexed.\n2. Avoid using \`SELECT *\` on large tables.\n3. Use pagination with \`LIMIT\` and \`OFFSET\`.`;
+
+    // 7. Performance / Optimization
+    if (msg.includes("slow") || msg.includes("index") || msg.includes("performance") || msg.includes("optimize")) {
+      return `To speed up performance on **${provider}**:\n1. Ensure columns in your \`WHERE\` and \`JOIN\` clauses are indexed.\n2. Avoid using \`SELECT *\` on large tables.\n3. Use pagination with \`LIMIT\` and \`OFFSET\`.`;
     }
+
+    // 8. Join queries
     if (msg.includes("join")) {
       return `Here is a recommended \`JOIN\` query template:\n\`\`\`sql\nSELECT u.id, u.name, o.total_amount\nFROM users u\nINNER JOIN orders o ON u.id = o.user_id\nWHERE o.status = 'completed';\n\`\`\``;
     }
-    if (msg.includes("migration") || msg.includes("alter")) {
-      return `Here is a migration script to add columns to \`${activeTableName}\`:\n\`\`\`sql\nALTER TABLE ${activeTableName} ADD COLUMN updated_at TEXT;\n\`\`\``;
-    }
 
-    return `I am your **AI SQL Assistant** for **${ctx.providerName}**.\n\nCurrent Active Table: \`${activeTableName}\`.\nHow can I help you write, optimize, or debug your queries?`;
+    // Default Fallback with Contextual Assistance
+    return `I am your **AI SQL Assistant** for **${provider}**.
+
+I can help you with:
+1. **Schema DDL**: e.g., *"create employee schema"*, *"create table products"*
+2. **Data Operations**: e.g., *"I need to add one user"*, *"update user status"*
+3. **Query Generation**: e.g., *"fetch top 10 users"*, *"join users and orders"*
+
+Current Active Table: \`${activeTableName}\`. How can I assist you?`;
   }
 
   async generateSampleData(tableName: string, count: number, isEdgeCase: boolean, ctx: AIContext): Promise<AISampleDataResult> {

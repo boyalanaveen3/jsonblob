@@ -32,6 +32,7 @@ import {
   ArrowLeftRight,
   LogOut,
   Newspaper,
+  TestTube,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -47,6 +48,7 @@ import { CollectionsView } from "@/components/editor/CollectionsView";
 import { SettingsView } from "@/components/editor/SettingsView";
 import { ConversionView } from "@/components/editor/ConversionView";
 import { DeveloperIntelligenceView } from "@/components/news/DeveloperIntelligenceView";
+import { TestAutomationView } from "@/components/test-automation/TestAutomationView";
 import dynamic from "next/dynamic";
 
 const MonacoEditor = dynamic(() => import("@/components/editor/MonacoEditor"), {
@@ -140,6 +142,7 @@ export default function BlobDashboard({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [activeEditorTab, setActiveEditorTab] = useState<"editor" | "viewer">("editor");
+  const [isLoadingBlob, setIsLoadingBlob] = useState(false);
   const { isOpen: isAiOpen, setIsOpen: setAiOpen } = useAiStore();
 
   // Toasts
@@ -190,7 +193,14 @@ export default function BlobDashboard({
     if (initialSelectedBlob) {
       setSelectedBlob(initialSelectedBlob);
       setTitle(initialSelectedBlob.title);
-      setContent(initialSelectedBlob.content);
+      if (initialSelectedBlob.content) {
+        setContent(initialSelectedBlob.content);
+        setBlobsList((prev) =>
+          prev.map((b) =>
+            b.id === initialSelectedBlob.id ? { ...b, content: initialSelectedBlob.content } : b
+          )
+        );
+      }
       setActiveView("workspace");
     } else if (defaultView) {
       setActiveView(defaultView);
@@ -260,6 +270,7 @@ export default function BlobDashboard({
   // --- Autosave Effect (Only runs for existing saved blobs) ---
   useEffect(() => {
     if (!autosaveEnabled) return;
+    if (isLoadingBlob) return;
     if (!title.trim() || !isValidJson) return;
     if (activeView !== "workspace") return; // Don't autosave when in SQL/other views
     if (typeof window !== "undefined") {
@@ -349,12 +360,41 @@ export default function BlobDashboard({
   }, [blobsList, search]);
 
   // --- Handle Select Blob ---
-  const handleSelectBlob = (blob: Blob) => {
+  const handleSelectBlob = async (blob: Blob) => {
     setSelectedBlob(blob);
     setTitle(blob.title);
-    setContent(blob.content);
     setActiveView("workspace");
-    router.push(`/${blob.id}`);
+
+    // If blob already has full content cached in memory, load instantly (0ms delay)
+    if (blob.content && blob.content.trim().length > 0) {
+      setContent(blob.content);
+      router.push(`/${blob.id}`);
+      return;
+    }
+
+    // Otherwise, fetch full R2 payload via Edge API route
+    setIsLoadingBlob(true);
+    try {
+      const res = await fetch(`/api/blobs/${blob.id}`);
+      if (res.ok) {
+        const fullBlob = (await res.json()) as Blob;
+        setSelectedBlob(fullBlob);
+        setTitle(fullBlob.title);
+        setContent(fullBlob.content || "");
+        // Cache full content into blobsList so subsequent switches are instant
+        setBlobsList((prev) =>
+          prev.map((b) => (b.id === blob.id ? { ...b, content: fullBlob.content } : b))
+        );
+      } else {
+        showToast("error", "Failed to load blob content");
+      }
+    } catch (err: any) {
+      console.error("Error loading blob content:", err);
+      showToast("error", "Error loading blob content");
+    } finally {
+      setIsLoadingBlob(false);
+      router.push(`/${blob.id}`);
+    }
   };
 
   // --- Handle New Blob ---
@@ -765,6 +805,18 @@ export default function BlobDashboard({
                 </span>
               </button>
 
+              {/* JS Playground / JS Editor Link */}
+              <Link
+                href="/playground"
+                title="JS / Multi-Language Code Playground"
+                className="w-full py-3 flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer relative border-l-2 text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+              >
+                <Terminal className="w-5 h-5 shrink-0 text-amber-500" />
+                <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                  JS Editor
+                </span>
+              </Link>
+
               {/* SQL Workspace Link */}
               <button
                 onClick={() => setActiveView("sql")}
@@ -842,6 +894,22 @@ export default function BlobDashboard({
                 <Newspaper className="w-5 h-5 shrink-0" />
                 <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
                   Dev Intelligence
+                </span>
+              </button>
+
+              {/* AI Test Automation Link */}
+              <button
+                onClick={() => setActiveView("test-automation")}
+                title="AI Test Automation"
+                className={`w-full py-3 flex items-center justify-start pl-[20px] gap-3 transition-all cursor-pointer relative border-l-2 ${
+                  activeView === "test-automation"
+                    ? "bg-primary/10 text-primary border-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground border-transparent"
+                }`}
+              >
+                <TestTube className="w-5 h-5 shrink-0" />
+                <span className="text-sm font-medium hidden md:inline-block whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300 delay-100 pointer-events-none select-none">
+                  Test Automation
                 </span>
               </button>
 
@@ -1211,6 +1279,16 @@ export default function BlobDashboard({
                 <Sparkles className="w-3.5 h-3.5 animate-pulse" />
                 <span className="hidden md:inline">AI Assistant</span>
               </button>
+
+              {/* JS Playground / JS Editor Button */}
+              <Link
+                href="/playground"
+                className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md border border-amber-500/30 hover:border-amber-500/60 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 transition-all cursor-pointer"
+                title="Open JS Code Playground"
+              >
+                <Terminal className="w-3.5 h-3.5" />
+                <span>JS Editor</span>
+              </Link>
             </div>
           </header>
 
@@ -1243,6 +1321,12 @@ export default function BlobDashboard({
                 </div>
 
                 <div className="flex-1 relative bg-background">
+                  {isLoadingBlob && (
+                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-background/80 backdrop-blur-xs">
+                      <Loader2 className="w-6 h-6 animate-spin text-primary mb-2" />
+                      <span className="text-xs font-semibold text-muted-foreground">Loading blob payload...</span>
+                    </div>
+                  )}
                   {activeEditorTab === "editor" ? (
                     <MonacoEditor
                       value={content}
@@ -1454,6 +1538,10 @@ export default function BlobDashboard({
       ) : activeView === "news" ? (
         <div className="flex-1 flex overflow-hidden">
           <DeveloperIntelligenceView />
+        </div>
+      ) : activeView === "test-automation" ? (
+        <div className="flex-1 flex overflow-hidden">
+          <TestAutomationView />
         </div>
       ) : (
         <div className="flex-1 flex overflow-hidden">

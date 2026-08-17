@@ -25,7 +25,10 @@ export type ObjectType =
   | "attachment"
   | "attachments"
   | "trash"
-  | "future";
+  | "future"
+  | "test_project_source"
+  | "test_case_file"
+  | "test_run_artifact";
 
 export interface KeyParams {
   userId?: string;
@@ -40,6 +43,12 @@ export interface KeyParams {
   version?: number | string;
   imageId?: string;
   attachmentId?: string;
+  projectId?: string;
+  testCaseId?: string;
+  runId?: string;
+  platform?: "web" | "mobile";
+  artifactType?: string;
+  fileName?: string;
   customPath?: string;
 }
 
@@ -221,6 +230,12 @@ export function generateObjectKey(type: ObjectType, params: KeyParams): string {
       return `attachments/${workspace}/${params.attachmentId || crypto.randomUUID()}`;
     case "trash":
       return `trash/${workspace}/${params.trashId || crypto.randomUUID()}.json`;
+    case "test_project_source":
+      return `projects/${params.projectId || crypto.randomUUID()}/source/project.zip`;
+    case "test_case_file":
+      return `projects/${params.projectId || "default"}/tests/${params.platform || "web"}/${params.testCaseId || crypto.randomUUID()}.${params.platform === "mobile" ? "yaml" : "spec.ts"}`;
+    case "test_run_artifact":
+      return `runs/${params.runId || "default"}/${params.artifactType || "artifacts"}/${params.fileName || crypto.randomUUID()}`;
     case "future":
       return `future/${params.customPath || crypto.randomUUID()}`;
     default:
